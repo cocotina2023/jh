@@ -1,96 +1,96 @@
-name: Obfuscate Worker Script (Final Version)
+name: Obfuscate op.js from Repository
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - 'op.js'
+  workflow_dispatch:  # 仅手动触发
 
 jobs:
   build-and-obfuscate:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write  # 允许 workflow push 回仓库
 
     steps:
+      # 1. Checkout 仓库
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. 设置 Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
+      # 3. 安装混淆工具
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # 核心步骤：智能分割、混淆逻辑、然后合并
-      - name: Split, Obfuscate, and Combine
+      # 4. 生成并混淆 opp.js，只保留 userID 和 proxyIPs
+      - name: Generate and obfuscate opp.js
         run: |
-          # --- 1. 智能分割文件 ---
-          # 这是一个更稳健的方法，它会查找代码逻辑的起始点作为分割线
-          # 我们以 "let proxyIP = proxyIPs" 这行代码为标志
-          SEPARATOR="let proxyIP = proxyIPs"
-          
-          # 获取分割点所在的行号
-          LINE_NUMBER=$(grep -n -m 1 "$SEPARATOR" op.js | cut -d: -f1)
-
-          if [ -z "$LINE_NUMBER" ]; then
-            echo "错误：在 op.js 中找不到分割点 '${SEPARATOR}'。"
-            exit 1
-          fi
-
-          # 计算配置部分的行数
-          CONFIG_LINE_COUNT=$(($LINE_NUMBER - 1))
-          
-          # 将 op.js 的配置部分保存到 op.config.js
-          head -n $CONFIG_LINE_COUNT op.js > op.config.js
-          
-          # 将 op.js 的逻辑部分保存到 op.logic.js
-          tail -n +$LINE_NUMBER op.js > op.logic.js
-          
-          echo "文件已在第 ${CONFIG_LINE_COUNT} 行被成功分割。"
-
-          # --- 2. 混淆逻辑部分 ---
-          cat > obfuscate-logic.js <<'EOF'
+          cat > obfuscate-temp.js <<'EOF'
           const fs = require("fs");
           const path = require("path");
           const JavaScriptObfuscator = require("javascript-obfuscator");
 
-          const sourceFile = "op.logic.js"; // 输入：只混淆逻辑部分
+          const sourceFile = "op.js";
           const outputDir = "dist";
-          const outputFile = path.join(outputDir, "opp.logic.obfuscated.js"); // 临时输出
+          const outputFile = path.join(outputDir, "opp.js");
 
-          if (!fs.existsSync(sourceFile)) { process.exit(1); }
-          if (!fs.existsSync(outputDir)) { fs.mkdirSync(outputDir); }
+          // 检查源文件
+          if (!fs.existsSync(sourceFile)) {
+            console.error(`错误：源文件 ${sourceFile} 未找到！`);
+            process.exit(1);
+          }
+
+          // 确保输出目录存在
+          if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir);
+          }
+
+          // 读取原始代码
           const originalCode = fs.readFileSync(sourceFile, "utf8");
 
+          // 混淆配置
           const obfuscationOptions = {
-              esModule: true,
-              compact: true,
-              controlFlowFlattening: true,
-              deadCodeInjection: true,
-              stringArray: true,
-              renameGlobals: true,
+            esModule: true,
+            compact: true,
+            controlFlowFlattening: true,
+            controlFlowFlatteningThreshold: 0.75,
+            deadCodeInjection: true,
+            deadCodeInjectionThreshold: 0.4,
+            stringArray: true,
+            stringArrayEncoding: ["base64"],
+            stringArrayThreshold: 0.75,
+            renameGlobals: true,
+            identifierNamesGenerator: "mangled",
+            numbersToExpressions: true,
+            splitStrings: true,
+            splitStringsChunkLength: 10,
+            transformObjectKeys: true,
+            selfDefending: false,
+            debugProtection: false,
           };
 
+          // 生成混淆代码
           const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
-          fs.writeFileSync(outputFile, obfuscatedCode, "utf8");
-          console.log(`混淆后的逻辑部分已保存到: ${outputFile}`);
+
+          // header: 只保留 userID 和 proxyIPs
+          const header = `// version base on commit 43fad05dcdae3b723c53c226f8181fc5bd47223e, time is 2023-06-22 15:20:02 UTC
+          // @ts-ignore
+          let userID = "86c50e3a-5b87-49dd-bd20-03c7f2735e40";
+          const proxyIPs = [""];`;
+
+          const finalCode = header + "\n\n" + obfuscatedCode;
+
+          // 写入输出文件
+          fs.writeFileSync(outputFile, finalCode, "utf8");
+          console.log(`混淆後的文件已保存到: ${outputFile}`);
           EOF
-          node obfuscate-logic.js
 
-          # --- 3. 合并文件 ---
-          # 为了格式美观，在配置和混淆代码之间加一个换行
-          echo "" >> op.config.js
-          # 将干净的配置和混淆后的逻辑合并成最终的 opp.js 文件
-          cat op.config.js dist/opp.logic.obfuscated.js > dist/opp.js
-          
-          echo "最终文件 dist/opp.js 已成功生成。"
+          node obfuscate-temp.js
 
-      - name: Commit and push the final file
+      # 5. 提交并推送 opp.js
+      - name: Commit and push opp.js
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
@@ -98,7 +98,5 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit, dist/opp.js is already up-to-date."
           else
-            git commit -m "build: Generate obfuscated worker script"
+            git commit -m "build: Obfuscate op.js to dist/opp.js"
             git push
-          fi
-
