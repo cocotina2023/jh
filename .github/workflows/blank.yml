@@ -1,53 +1,5 @@
-name: Generate Final Worker Script
-
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - 'op.js'
-
-jobs:
-  build-and-obfuscate:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Install JavaScript Obfuscator
-        run: npm install javascript-obfuscator
-
-      # Core Step: Split the file, obfuscate the logic, then combine.
-      - name: Split, Obfuscate, and Combine
+      - name: Create obfuscation script (produce non-ESM output)
         run: |
-          # --- 1. Split File (Robust Method) ---
-          # Based on your latest op.js, the user configuration area ends right before the logic starts.
-          # We'll use the unique comment line as a reliable separator.
-          CONFIG_HEADER_LINES=$(sed -n '/\/\/ ------------------- 代码逻辑开始 (Code Logic Starts) -------------------/=' op.js)
-          
-          if [ -z "$CONFIG_HEADER_LINES" ]; then
-            echo "Error: Could not find the separator comment in op.js."
-            exit 1
-          fi
-
-          # Extract the header (everything up to and including the separator comment)
-          head -n $CONFIG_HEADER_LINES op.js > op.config.js
-          
-          # Extract the logic (everything after the separator comment)
-          tail -n +$(($CONFIG_HEADER_LINES + 1)) op.js > op.logic.js
-          
-          echo "File split successfully at line $CONFIG_HEADER_LINES."
-
-          # --- 2. Obfuscate the Logic Part ---
           cat > obfuscate-logic.js <<'EOF'
           const fs = require("fs");
           const path = require("path");
@@ -57,42 +9,55 @@ jobs:
           const outputDir = "dist";
           const outputFile = path.join(outputDir, "opp.logic.obfuscated.js");
 
-          if (!fs.existsSync(sourceFile)) { process.exit(1); }
-          if (!fs.existsSync(outputDir)) { fs.mkdirSync(outputDir); }
+          if (!fs.existsSync(sourceFile)) {
+            console.error("Source file missing:", sourceFile);
+            process.exit(1);
+          }
+          if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
           const originalCode = fs.readFileSync(sourceFile, "utf8");
 
           const obfuscationOptions = {
-              esModule: true,
               compact: true,
               controlFlowFlattening: true,
+              controlFlowFlatteningThreshold: 0.75,
               deadCodeInjection: true,
+              deadCodeInjectionThreshold: 0.4,
               stringArray: true,
-              renameGlobals: true,
+              stringArrayThreshold: 0.8,
+              transformObjectKeys: true,
+              // **确保不产生 ES module 包装** —— 这样混淆代码可以直接拼接到顶端的配置后面
+              esModule: false
           };
 
           const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
           fs.writeFileSync(outputFile, obfuscatedCode, "utf8");
           console.log(`Obfuscated logic saved to: ${outputFile}`);
           EOF
+          chmod +x obfuscate-logic.js
+
+      - name: Run obfuscation and produce final dist/opp.js (config + obfuscated logic)
+        run: |
+          set -euo pipefail
           node obfuscate-logic.js
 
-          # --- 3. Combine Files ---
-          # Add a newline for better formatting after the config header
-          echo "" >> op.config.js
-          # Combine the clean config header and the obfuscated logic into the final file
-          cat op.config.js dist/opp.logic.obfuscated.js > dist/opp.js
-          echo "Final opp.js file created successfully."
-
-      - name: Commit and push the final file
-        run: |
-          git config --global user.name 'GitHub Actions Bot'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          
-          git add dist/opp.js
-          
-          if git diff --staged --quiet; then
-            echo "No changes to commit, dist/opp.js is already up-to-date."
-          else
-            git commit -m "build: Generate final obfuscated worker script"
-            git push
+          # 确保 op.config.js 存在并仅包含你要保留的配置（例如前两行）
+          if [ ! -f op.config.js ]; then
+            echo "Missing op.config.js"
+            exit 1
           fi
+
+          # 确保混淆输出存在
+          if [ ! -f dist/opp.logic.obfuscated.js ]; then
+            echo "Missing dist/opp.logic.obfuscated.js"
+            ls -la dist || true
+            exit 1
+          fi
+
+          # 关键：直接拼接配置行 + 混淆代码为最终文件
+          # 使用 printf + cat 确保不会意外加上 BOM 或其他不可见字符
+          printf "%s\n" "$(cat op.config.js)" > dist/opp.js
+          # 将混淆代码紧跟在后面（不额外插入空行）
+          sed -n '1,$p' dist/opp.logic.obfuscated.js >> dist/opp.js
+
+          echo "Final dist/opp.js created (config + obfuscated logic)."
+          wc -c dist/opp.js
