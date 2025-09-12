@@ -10,58 +10,71 @@ jobs:
       contents: write
 
     steps:
-      # 1. Checkout repo
+      # 1. Checkout
       - uses: actions/checkout@v4
 
-      # 2. Setup Node.js
+      # 2. Setup Node
       - uses: actions/setup-node@v4
         with:
           node-version: 18
 
       # 3. Install obfuscator
-      - run: npm install -g javascript-obfuscator
+      - run: npm install javascript-obfuscator
 
-      # 4. Obfuscate
-      - name: Obfuscate op.js
+      # 4. Build opp.js
+      - name: Build opp.js
         run: |
-          # 提取 header（前两行保留）
-          head -n 2 op.js > header.js
-          # 剩下部分作为 body
-          tail -n +3 op.js > body.js
+          node <<'EOF'
+          const fs = require("fs");
+          const JavaScriptObfuscator = require("javascript-obfuscator");
 
-          # 混淆 body
-          javascript-obfuscator body.js \
-            --output body.tmp.js \
-            --compact true \
-            --control-flow-flattening true \
-            --control-flow-flattening-threshold 0.75 \
-            --dead-code-injection true \
-            --dead-code-injection-threshold 0.4 \
-            --string-array true \
-            --string-array-encoding base64 \
-            --string-array-threshold 0.75 \
-            --rename-globals true \
-            --identifier-names-generator mangled \
-            --numbers-to-expressions true \
-            --split-strings true \
-            --split-strings-chunk-length 10 \
-            --transform-object-keys true \
-            --self-defending false \
-            --debug-protection false \
-            --disable-console-output true
+          const source = fs.readFileSync("op.js", "utf8").split("\n");
 
-          # 用 IIFE 包裹混淆后的 body
-          echo "(function(){" > body.obf.js
-          cat body.tmp.js >> body.obf.js
-          echo "})();" >> body.obf.js
+          // 保留前两行作为 header
+          const header = source.slice(0, 2).join("\n");
+          const body = source.slice(2).join("\n");
 
-          # 合并 header + IIFE 包裹的混淆代码 → opp.js
-          cat header.js body.obf.js > opp.js
+          // 混淆 body
+          const obfuscated = JavaScriptObfuscator.obfuscate(body, {
+            compact: true,
+            controlFlowFlattening: true,
+            controlFlowFlatteningThreshold: 0.75,
+            deadCodeInjection: true,
+            deadCodeInjectionThreshold: 0.4,
+            stringArray: true,
+            stringArrayEncoding: ["base64"],
+            stringArrayThreshold: 0.75,
+            renameGlobals: true,
+            identifierNamesGenerator: "mangled",
+            numbersToExpressions: true,
+            splitStrings: true,
+            splitStringsChunkLength: 10,
+            transformObjectKeys: true,
+            selfDefending: false,
+            debugProtection: false,
+            disableConsoleOutput: true,
+          }).getObfuscatedCode();
 
-          # 删除 GAMFC 注释（如存在）
-          sed -i '/^\/\/ *<!--.*-->.*$/d' opp.js
+          // 合并 header + IIFE
+          let finalCode = `${header}\n\n(function(){\n${obfuscated}\n})();\n`;
 
-      # 5. Commit opp.js 回 repo
+          // 清理 GAMFC 注释
+          finalCode = finalCode.replace(/^\/\/ *<!--.*-->.*$/gm, "");
+
+          fs.writeFileSync("opp.js", finalCode, "utf8");
+          console.log("✅ opp.js generated");
+          EOF
+
+      # 5. 检查 header 是否存在
+      - name: Validate header
+        run: |
+          if ! grep -q "let userID" opp.js; then
+            echo "❌ opp.js missing header (let userID ...)"
+            exit 1
+          fi
+          echo "✅ opp.js header OK"
+
+      # 6. Commit opp.js
       - name: Commit opp.js
         run: |
           echo "op.js" >> .gitignore
@@ -75,6 +88,6 @@ jobs:
             git push
           fi
 
-      # 6. 预览前 5 行，方便在日志确认 header 是否正确
+      # 7. Preview 前 5 行
       - name: Preview opp.js
         run: head -n 5 opp.js
