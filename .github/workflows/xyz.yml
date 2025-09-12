@@ -71,7 +71,8 @@ jobs:
             .getObfuscatedCode();
 
           // Header（你可手動改 UUID）
-          const header = \`let userID = \\"a1b2c3d4-e5f6-7890-1234-567890abcdef\\";\\nconst proxyIPs = [\\"\\"];\`;
+          const header = `let userID = "a1b2c3d4-e5f6-7890-1234-567890abcdef";
+const proxyIPs = [""];`;
 
           // 拼接 Header + 混淆代碼
           const finalCode = header + '\\n' + obfuscatedCode;
