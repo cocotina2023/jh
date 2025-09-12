@@ -1,6 +1,4 @@
-# This is the definitive workflow using robust, pattern-based file splitting.
-# It is tailored specifically for your op.js file structure.
-name: Generate Final Worker Script (Robust Version)
+name: Generate Final Worker Script
 
 on:
   workflow_dispatch:
@@ -28,22 +26,26 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # Core Step: Split using content patterns, obfuscate logic, then combine.
+      # Core Step: Split the file, obfuscate the logic, then combine.
       - name: Split, Obfuscate, and Combine
         run: |
-          # --- 1. Split File using `sed` (Robust Method) ---
-          # This method is not dependent on line numbers.
+          # --- 1. Split File (Robust Method) ---
+          # Based on your latest op.js, the user configuration area ends right before the logic starts.
+          # We'll use the unique comment line as a reliable separator.
+          CONFIG_HEADER_LINES=$(sed -n '/\/\/ ------------------- 代码逻辑开始 (Code Logic Starts) -------------------/=' op.js)
           
-          # Extract the header: everything BEFORE the line with "export default {"
-          # The sed command prints lines until it finds the pattern, then quits.
-          # We use `sed '$d'` to remove the matching line itself from the header.
-          sed '/^export default {/q' op.js | sed '$d' > op.config.js
+          if [ -z "$CONFIG_HEADER_LINES" ]; then
+            echo "Error: Could not find the separator comment in op.js."
+            exit 1
+          fi
 
-          # Extract the logic: everything FROM the line with "export default {" to the end.
-          # The sed command finds the pattern and prints from that line to the end of the file.
-          sed -n '/^export default {/,$p' op.js > op.logic.js
+          # Extract the header (everything up to and including the separator comment)
+          head -n $CONFIG_HEADER_LINES op.js > op.config.js
           
-          echo "File split successfully based on 'export default {' pattern."
+          # Extract the logic (everything after the separator comment)
+          tail -n +$(($CONFIG_HEADER_LINES + 1)) op.js > op.logic.js
+          
+          echo "File split successfully at line $CONFIG_HEADER_LINES."
 
           # --- 2. Obfuscate the Logic Part ---
           cat > obfuscate-logic.js <<'EOF'
@@ -51,15 +53,14 @@ jobs:
           const path = require("path");
           const JavaScriptObfuscator = require("javascript-obfuscator");
 
-          const sourceFile = "op.logic.js"; // Input: logic part only
+          const sourceFile = "op.logic.js";
           const outputDir = "dist";
-          const outputFile = path.join(outputDir, "opp.logic.obfuscated.js"); // Output: obfuscated logic
+          const outputFile = path.join(outputDir, "opp.logic.obfuscated.js");
 
           if (!fs.existsSync(sourceFile)) { process.exit(1); }
           if (!fs.existsSync(outputDir)) { fs.mkdirSync(outputDir); }
           const originalCode = fs.readFileSync(sourceFile, "utf8");
 
-          // Obfuscation options
           const obfuscationOptions = {
               esModule: true,
               compact: true,
@@ -76,7 +77,7 @@ jobs:
           node obfuscate-logic.js
 
           # --- 3. Combine Files ---
-          # Add a newline for better formatting after the config
+          # Add a newline for better formatting after the config header
           echo "" >> op.config.js
           # Combine the clean config header and the obfuscated logic into the final file
           cat op.config.js dist/opp.logic.obfuscated.js > dist/opp.js
