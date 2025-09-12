@@ -1,4 +1,4 @@
-name: Obfuscate Worker Script (Final Version)
+name: Generate Final Worker Script
 
 on:
   workflow_dispatch:
@@ -26,17 +26,14 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # 核心步驟：分割文件，僅混淆邏輯部分，然後合併
+      # 核心步驟：精準分割、混淆邏輯、然後合併
       - name: Split, Obfuscate, and Combine
         run: |
           # --- 1. 分割文件 ---
-          # 經過分析，您的配置文件在前 8 行 (包含註釋和空行)
-          CONFIG_LINE_COUNT=8
+          # 根據您的最新文件結構，我們將前 7 行作為不可混淆的配置頭部
+          CONFIG_LINE_COUNT=7
           
-          # 將 op.js 的前 8 行 (配置) 保存到 op.config.js
           head -n $CONFIG_LINE_COUNT op.js > op.config.js
-          
-          # 將 op.js 從第 9 行開始的所有內容 (邏輯) 保存到 op.logic.js
           tail -n +$(($CONFIG_LINE_COUNT + 1)) op.js > op.logic.js
           echo "File split into config (first $CONFIG_LINE_COUNT lines) and logic parts."
 
@@ -47,15 +44,14 @@ jobs:
           const path = require("path");
           const JavaScriptObfuscator = require("javascript-obfuscator");
 
-          const sourceFile = "op.logic.js"; // 輸入：只混淆邏輯部分
+          const sourceFile = "op.logic.js";
           const outputDir = "dist";
-          const outputFile = path.join(outputDir, "opp.logic.obfuscated.js"); // 輸出：混淆後的邏輯
+          const outputFile = path.join(outputDir, "opp.logic.obfuscated.js");
 
           if (!fs.existsSync(sourceFile)) { process.exit(1); }
           if (!fs.existsSync(outputDir)) { fs.mkdirSync(outputDir); }
           const originalCode = fs.readFileSync(sourceFile, "utf8");
 
-          // 關鍵混淆配置
           const obfuscationOptions = {
               esModule: true,
               compact: true,
@@ -72,12 +68,10 @@ jobs:
           node obfuscate-logic.js
 
           # --- 3. 合併文件 ---
+          # 為了格式美觀，在配置和混淆代碼之間加一個換行
+          echo "" >> op.config.js
           # 將乾淨的配置和混淆後的邏輯合併成最終的 opp.js 文件
           cat op.config.js dist/opp.logic.obfuscated.js > dist/opp.js
-          # 為了格式美觀，在配置和混淆代碼之間加一個換行
-          sed -i -e '$a\' op.config.js
-          cat op.config.js dist/opp.logic.obfuscated.js > dist/opp.js
-
           echo "Final opp.js file created successfully."
 
       - name: Commit and push the final file
@@ -90,6 +84,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit, dist/opp.js is already up-to-date."
           else
-            git commit -m "build: Generate obfuscated worker script"
+            git commit -m "build: Generate final obfuscated worker script"
             git push
           fi
