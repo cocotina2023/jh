@@ -10,19 +10,26 @@ jobs:
       contents: write
 
     steps:
+      # 1. Checkout repo
       - uses: actions/checkout@v4
 
+      # 2. Setup Node.js
       - uses: actions/setup-node@v4
         with:
           node-version: 18
 
+      # 3. Install obfuscator
       - run: npm install -g javascript-obfuscator
 
+      # 4. Obfuscate
       - name: Obfuscate op.js
         run: |
+          # 提取 header（前两行保留）
           head -n 2 op.js > header.js
+          # 剩下部分作为 body
           tail -n +3 op.js > body.js
 
+          # 混淆 body
           javascript-obfuscator body.js \
             --output body.tmp.js \
             --compact true \
@@ -43,15 +50,18 @@ jobs:
             --debug-protection false \
             --disable-console-output true
 
+          # 用 IIFE 包裹混淆后的 body
           echo "(function(){" > body.obf.js
           cat body.tmp.js >> body.obf.js
           echo "})();" >> body.obf.js
 
+          # 合并 header + IIFE 包裹的混淆代码 → opp.js
           cat header.js body.obf.js > opp.js
 
-          # 清理 GAMFC 注释
+          # 删除 GAMFC 注释（如存在）
           sed -i '/^\/\/ *<!--.*-->.*$/d' opp.js
 
+      # 5. Commit opp.js 回 repo
       - name: Commit opp.js
         run: |
           echo "op.js" >> .gitignore
@@ -64,3 +74,7 @@ jobs:
             git commit -m 'build: generate opp.js'
             git push
           fi
+
+      # 6. 预览前 5 行，方便在日志确认 header 是否正确
+      - name: Preview opp.js
+        run: head -n 5 opp.js
