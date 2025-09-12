@@ -1,7 +1,7 @@
-name: Split-Obfuscate-Combine Workflow
+name: Obfuscate op.js from Repository
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # 手动触发
   push:
     branches:
       - main
@@ -17,103 +17,88 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          persist-credentials: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install JavaScript Obfuscator
+        run: npm install javascript-obfuscator
+
+      - name: Generate and obfuscate to opp.js
         run: |
-          if [ -f package-lock.json ]; then
-            npm ci --no-audit --no-fund
-          else
-            npm install javascript-obfuscator --no-audit --no-fund --no-save
-          fi
+          cat > obfuscate-temp.js <<'EOF'
+const fs = require("fs");
+const path = require("path");
+const JavaScriptObfuscator = require("javascript-obfuscator");
 
-      - name: Split op.js into config + logic
+// 源文件与输出路径
+const sourceFile = "op.js";
+const outputDir = "dist";
+const outputFile = path.join(outputDir, "opp.js");
+
+// 检查源文件
+if (!fs.existsSync(sourceFile)) {
+  console.error(`错误：源文件 ${sourceFile} 未找到！`);
+  process.exit(1);
+}
+
+// 确保输出目录存在
+if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
+
+// 读取原始代码
+const originalCode = fs.readFileSync(sourceFile, "utf8");
+
+// 混淆配置
+const obfuscationOptions = {
+  esModule: true,
+  compact: true,
+  controlFlowFlattening: true,
+  controlFlowFlatteningThreshold: 0.75,
+  deadCodeInjection: true,
+  deadCodeInjectionThreshold: 0.4,
+  stringArray: true,
+  stringArrayEncoding: ['base64'],
+  stringArrayThreshold: 0.75,
+  renameGlobals: true,
+  identifierNamesGenerator: 'mangled',
+  numbersToExpressions: true,
+  splitStrings: true,
+  splitStringsChunkLength: 10,
+  transformObjectKeys: true,
+  selfDefending: false,
+  debugProtection: false
+};
+
+// 生成混淆代码
+const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
+
+// 前置注释头
+const header = `// version base on commit 43fad05dcdae3b723c53c226f8181fc5bd47223e, time is 2023-06-22 15:20:02 UTC.
+// @ts-ignore
+import { connect } from "cloudflare:sockets";
+
+let userID = "86c50e3a-5b87-49dd-bd20-03c7f2735e40";
+const proxyIPs = [""];`;
+
+// 合并 header 和混淆代码
+const finalCode = header + "\n" + obfuscatedCode;
+
+// 写入输出文件
+fs.writeFileSync(outputFile, finalCode, "utf8");
+console.log(`混淆後的文件已保存到: ${outputFile}`);
+EOF
+
+          node obfuscate-temp.js
+
+      - name: Commit and push the obfuscated file
         run: |
-          set -euo pipefail
-          if [ ! -f op.js ]; then
-            echo "❌ Error: op.js not found."
-            exit 1
-          fi
-
-          mkdir -p dist
-          head -n 2 op.js > op.config.js
-          tail -n +3 op.js > op.logic.js
-
-          if [ ! -s op.logic.js ]; then
-            echo "⚠️ Warning: op.logic.js is empty. Skipping obfuscation."
-            cp op.config.js dist/opp.js
-            exit 0
-          fi
-
-      - name: Create obfuscation script
-        run: |
-          cat > obfuscate-logic.js <<'EOF'
-          const fs = require("fs");
-          const path = require("path");
-          const JavaScriptObfuscator = require("javascript-obfuscator");
-
-          const sourceFile = "op.logic.js";
-          const outputDir = "dist";
-          const outputFile = path.join(outputDir, "opp.logic.obfuscated.js");
-
-          if (!fs.existsSync(sourceFile)) {
-            console.error("❌ Source file missing:", sourceFile);
-            process.exit(1);
-          }
-
-          if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
-          const originalCode = fs.readFileSync(sourceFile, "utf8");
-
-          const obfuscationOptions = {
-            compact: true,
-            controlFlowFlattening: true,
-            controlFlowFlatteningThreshold: 0.75,
-            deadCodeInjection: true,
-            deadCodeInjectionThreshold: 0.4,
-            stringArray: true,
-            stringArrayThreshold: 0.8,
-            transformObjectKeys: true,
-            esModule: false
-          };
-
-          const obfuscatedCode = JavaScriptObfuscator
-            .obfuscate(originalCode, obfuscationOptions)
-            .getObfuscatedCode();
-
-          fs.writeFileSync(outputFile, obfuscatedCode, "utf8");
-          console.log(`✅ Obfuscated logic saved to: ${outputFile}`);
-          EOF
-
-      - name: Run obfuscation and merge config + logic
-        run: |
-          set -euo pipefail
-          node obfuscate-logic.js
-
-          if [ ! -f dist/opp.logic.obfuscated.js ]; then
-            echo "❌ Missing dist/opp.logic.obfuscated.js"
-            exit 1
-          fi
-
-          # 拼接配置 + 混淆代码
-          cat op.config.js dist/opp.logic.obfuscated.js > dist/opp.js
-          echo "✅ Final dist/opp.js created."
-
-      - name: Commit and push dist/opp.js
-        run: |
-          set -euo pipefail
-          git config user.name "GitHub Actions Bot"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add dist/opp.js
           if git diff --staged --quiet; then
-            echo "ℹ️ No changes to commit."
+            echo "No changes to commit, dist/opp.js is already up-to-date."
           else
-            git commit -m "build: Split, obfuscate, and combine op.js"
+            git commit -m "build: Obfuscate op.js to dist/opp.js"
             git push
-          fi
