@@ -1,12 +1,16 @@
-name: Obfuscate op.js -> dist/opp.js (use header from dist/opp.js if present)
+# .github/workflows/deploy.yml
+
+name: Obfuscate op.js -> dist/opp.js (Preserve Header)
 
 on:
+  # 允許您從 GitHub Actions 頁面手動觸發此流程
   workflow_dispatch:
 
 jobs:
   build-and-obfuscate:
     runs-on: ubuntu-latest
     permissions:
+      # Action 需要這個權限才能將變更提交回您的儲存庫
       contents: write
 
     steps:
@@ -21,118 +25,90 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      - name: Generate & obfuscate (use header from dist/opp.js if exists)
-        env:
-          NODE_OPTIONS: "--max-old-space-size=4096"
+      - name: Generate and Obfuscate op.js
+        id: obfuscate
         run: |
           mkdir -p dist
+          # 修正了打字錯誤：ode -> node
           node <<'NODE'
           const fs = require('fs');
-          const path = require('path');
           const JavaScriptObfuscator = require('javascript-obfuscator');
 
-          const srcPath = path.resolve('op.js');
-          const distPath = path.resolve('dist/opp.js');
+          const sourceFile = 'op.js';
+          const outputFile = 'dist/opp.js';
 
-          if (!fs.existsSync(srcPath)) {
-            console.error('Error: op.js not found in repo root. Place op.js at repo root.');
+          // --- 💡 核心邏輯修正 ---
+          // 1. 定義一個預設的 header，用於首次生成檔案。
+          let header = `let userID = "PLEASE-CHANGE-ME-IN-THE-GENERATED-FILE";\nconst proxyIPs = [""];`;
+
+          // 2. 檢查目標檔案 dist/opp.js 是否已存在。
+          if (fs.existsSync(outputFile)) {
+              console.log(`找到已存在的 ${outputFile}，正在嘗試保留其 header...`);
+              const existingContent = fs.readFileSync(outputFile, 'utf8');
+              
+              // 3. 透過尋找混淆程式碼的起始特徵來安全地分離 header。
+              // 混淆後的程式碼通常以 (function(... 或 const _0x... 開頭。
+              const obfuscatedCodeStartIndex = existingContent.search(/\(function\(|const _0x/);
+
+              if (obfuscatedCodeStartIndex > 0) {
+                  // 如果找到了混淆程式碼的開頭，那麼它之前的所有內容都被視為 header。
+                  header = existingContent.substring(0, obfuscatedCodeStartIndex).trim();
+                  console.log('✅ 成功從現有檔案中保留了 header。');
+              } else {
+                  console.warn('⚠️ 無法在現有檔案中可靠地找到 header，將使用預設 header。');
+              }
+          } else {
+              console.log(`${outputFile} 不存在，將為首次運行生成預設 header。`);
+          }
+          // --- 核心邏輯修正結束 ---
+          
+          if (!fs.existsSync(sourceFile)) {
+            console.error(`❌ 錯誤: 來源檔案 ${sourceFile} 不存在!`);
             process.exit(1);
           }
 
-          const src = fs.readFileSync(srcPath, 'utf8');
+          const originalCode = fs.readFileSync(sourceFile, 'utf8');
 
-          // Regex to match header userID and proxyIPs
-          const userRe = /let\s+userID\s*=\s*(?:"([^"]*)"|'([^']*)'|([^;]+?))\s*;/i;
-          const proxyRe = /const\s+proxyIPs\s*=\s*\[([^\]]*)\]\s*;?/i;
-
-          // 1) Try to read header from existing dist/opp.js (so manual edits there take precedence)
-          let headerText = null;
-          if (fs.existsSync(distPath)) {
-            const distTxt = fs.readFileSync(distPath, 'utf8');
-            const u = distTxt.match(userRe);
-            const p = distTxt.match(proxyRe);
-            if (u || p) {
-              const userVal = u ? (u[1] ?? u[2] ?? (u[3] && u[3].trim()) ?? '') : '';
-              const proxyInner = p ? (p[1] ?? '') : '';
-              const proxyParts = proxyInner.length ? proxyInner.split(',').map(s => s.trim()).filter(Boolean) : [''];
-              const proxyNormalized = proxyParts.length ? proxyParts.map(x => {
-                const m = x.match(/^['"](.*)['"]$/);
-                return m ? m[1] : x;
-              }) : [''];
-              const finalUser = userVal.length ? userVal : 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
-              headerText = `let userID = "${String(finalUser).replace(/"/g,'\\"')}";\nconst proxyIPs = [${proxyNormalized.map(x => `"${String(x).replace(/"/g,'\\"')}"`).join(', ')}];`;
-              console.log('Using header from dist/opp.js (manual edits take precedence).');
-            }
-          }
-
-          // 2) If header not found in dist, try to extract from source op.js
-          if (!headerText) {
-            const u2 = src.match(userRe);
-            const p2 = src.match(proxyRe);
-            const userVal2 = u2 ? (u2[1] ?? u2[2] ?? (u2[3] && u2[3].trim()) ?? '') : '';
-            const proxyInner2 = p2 ? (p2[1] ?? '') : '';
-            const proxyParts2 = proxyInner2.length ? proxyInner2.split(',').map(s => s.trim()).filter(Boolean) : [''];
-            const proxyNormalized2 = proxyParts2.length ? proxyParts2.map(x => {
-              const m = x.match(/^['"](.*)['"]$/);
-              return m ? m[1] : x;
-            }) : [''];
-            const finalUser2 = userVal2.length ? userVal2 : 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
-            headerText = `let userID = "${String(finalUser2).replace(/"/g,'\\"')}";\nconst proxyIPs = [${proxyNormalized2.map(x => `"${String(x).replace(/"/g,'\\"')}"`).join(', ')}];`;
-            console.log('Using header from op.js (fallback).');
-          }
-
-          // 3) Remove first occurrence of header from body (if present in src) to avoid duplication
-          let body = src;
-          const uSrc = body.match(userRe);
-          if (uSrc) body = body.replace(uSrc[0], '');
-          const pSrc = body.match(proxyRe);
-          if (pSrc) body = body.replace(pSrc[0], '');
-
-          // 4) Obfuscate body - keep renameGlobals:false so header names remain usable
-          const obfOptions = {
+          const obfuscationOptions = {
             compact: true,
             controlFlowFlattening: true,
-            controlFlowFlatteningThreshold: 0.75,
+            controlFlowFlatteningThreshold: 1,
             deadCodeInjection: true,
-            deadCodeInjectionThreshold: 0.4,
+            deadCodeInjectionThreshold: 1,
             stringArray: true,
             stringArrayEncoding: ['base64'],
-            stringArrayThreshold: 0.75,
-            renameGlobals: false,
-            identifierNamesGenerator: 'mangled',
+            stringArrayThreshold: 1,
+            renameGlobals: true,
+            identifierNamesGenerator: 'hexadecimal',
             numbersToExpressions: true,
             splitStrings: true,
-            splitStringsChunkLength: 10,
+            splitStringsChunkLength: 25,
             transformObjectKeys: true,
             selfDefending: false,
-            debugProtection: false,
-            disableConsoleOutput: true
+            debugProtection: false
           };
 
-          const obf = JavaScriptObfuscator.obfuscate(body, obfOptions).getObfuscatedCode();
+          const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
 
-          // 5) Safe combine: header (from dist or src) + semicolon + obfuscated body
-          const final = headerText + '\n;\n' + obf + '\n';
+          // 將保留的 (或預設的) header 與新混淆的程式碼拼接起來
+          const finalCode = header + '\n' + obfuscatedCode;
 
-          fs.writeFileSync(distPath, final, 'utf8');
-          console.log('✅ dist/opp.js written using header from dist/opp.js (if existed) or op.js otherwise.');
-          console.log('Header used:', headerText.split(/\r?\n/).slice(0,2).join(' | '));
+          fs.writeFileSync(outputFile, finalCode, 'utf8');
+          console.log(`✅ 成功生成 ${outputFile}。`);
           NODE
 
+      # 步驟 4: 提交並推送變更 (優化後的方法)
+      # 這裡使用了一個專門的 Action，比手動執行 git 指令更簡潔、更可靠。
       - name: Commit and push dist/opp.js
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "build: 自動生成混淆後的 dist/opp.js"
+          file_pattern: dist/opp.js # 只提交這個檔案的變更
+          commit_user_name: GitHub Actions Bot
+          commit_user_email: github-actions[bot]@users.noreply.github.com
+          
+      - name: 預覽生成的 dist/opp.js
         run: |
-          git config --global user.name 'GitHub Actions Bot'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add dist/opp.js
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "build: generate obfuscated dist/opp.js (header from dist if present)"
-            git push
-          fi
-
-      - name: Show dist/opp.js preview
-        run: |
-          echo "===== dist/opp.js (first 20 lines) ====="
-          head -n 20 dist/opp.js || true
-          echo "========================================"
+          echo "===== Preview of dist/opp.js (first 10 lines) ====="
+          head -n 10 dist/opp.js || true
+          echo "================================================="
