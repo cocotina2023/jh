@@ -1,66 +1,53 @@
-name: Obfuscate op.js -> opp.js (preserve header, no UUID validation)
+name: Obfuscate op.js from Repository
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-obfuscate:
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
+      # 1. Checkout 倉庫
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. 設定 Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      - name: Install JavaScript Obfuscator (local)
+      # 3. 安裝混淆工具
+      - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      - name: Build opp.js (preserve let userID header, safe combine)
-        env:
-          NODE_OPTIONS: "--max-old-space-size=4096"
+      # 4. 產生並混淆 JS 檔案
+      - name: Generate and obfuscate op.js
         run: |
-          node <<'NODE'
+          node -e "
           const fs = require('fs');
           const path = require('path');
           const JavaScriptObfuscator = require('javascript-obfuscator');
 
-          const srcPath = path.resolve('op.js');
-          const outPath = path.resolve('opp.js');
+          const sourceFile = 'op.js';
+          const outputDir = 'dist';
+          const outputFile = path.join(outputDir, 'opp.js');
 
-          if (!fs.existsSync(srcPath)) {
-            console.error('Error: op.js not found in repo root. Place your source op.js at repo root.');
+          if (!fs.existsSync(sourceFile)) {
+            console.error(\`Error: \${sourceFile} not found!\`);
             process.exit(1);
           }
 
-          const src = fs.readFileSync(srcPath, 'utf8');
-
-          // Try to extract header: let userID = "..." ; const proxyIPs = [...];
-          const headerRegex = /let\s+userID\s*=\s*"([^"]*)"\s*;\s*[\r\n]+const\s+proxyIPs\s*=\s*\[[^\]]*\]\s*;?/i;
-          const m = src.match(headerRegex);
-
-          let headerText, bodyText;
-          if (m) {
-            headerText = m[0].trim();
-            // remove only the first occurrence of the matched header
-            const idx = src.indexOf(m[0]);
-            bodyText = src.slice(0, idx) + src.slice(idx + m[0].length);
-            // ensure the remainder is used as body
-            bodyText = bodyText;
-            console.log('Found header in op.js — preserving it.');
-          } else {
-            headerText = 'let userID = "a1b2c3d4-e5f6-7890-1234-567890abcdef";\nconst proxyIPs = [""];';
-            bodyText = src;
-            console.warn('Header not found in op.js — injecting default header.');
+          if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir);
           }
 
-          // Obfuscation options (do NOT rename globals so let userID remains userID)
-          const options = {
+          const originalCode = fs.readFileSync(sourceFile, 'utf8');
+
+          const obfuscationOptions = {
             compact: true,
             controlFlowFlattening: true,
             controlFlowFlatteningThreshold: 0.75,
@@ -69,50 +56,36 @@ jobs:
             stringArray: true,
             stringArrayEncoding: ['base64'],
             stringArrayThreshold: 0.75,
-            renameGlobals: false, // keep global identifiers intact
+            renameGlobals: true,
             identifierNamesGenerator: 'mangled',
             numbersToExpressions: true,
             splitStrings: true,
             splitStringsChunkLength: 10,
             transformObjectKeys: true,
             selfDefending: false,
-            debugProtection: false,
-            disableConsoleOutput: true
+            debugProtection: false
           };
 
-          const obf = JavaScriptObfuscator.obfuscate(bodyText, options).getObfuscatedCode();
+          const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
 
-          // SAFE combine: header + semicolon line + IIFE + obfuscated code
-          let final = headerText + '\n;\n(function(){\n' + obf + '\n})();\n';
+          const header = \`let userID = \\"a1b2c3d4-e5f6-7890-1234-567890abcdef\\";\\nconst proxyIPs = [\\"\\"];\`;
 
-          // Remove any injected comment markers like // <!--...--> or HTML comments
-          final = final.replace(/^\/\/ *<!--.*-->.*$/gm, '');
-          final = final.replace(/^\s*<!--.*-->.*$/gm, '');
+          // 保證輸出是 IIFE，不會有 import/export
+          const finalCode = header + '\\n(function(){\\n' + obfuscatedCode + '\\n})();';
 
-          fs.writeFileSync(outPath, final, 'utf8');
-          console.log('✅ opp.js generated at', outPath);
-          console.log('----- opp.js preview (first 20 lines) -----');
-          console.log(final.split(/\r?\n/).slice(0,20).join('\n'));
-          console.log('-------------------------------------------');
-          NODE
+          fs.writeFileSync(outputFile, finalCode, 'utf8');
+          console.log(\`Generated template file at \${outputFile}\`);
+          "
 
-      - name: Ensure op.js ignored and commit opp.js
+      # 5. Commit 並 push opp.js
+      - name: Commit and push opp.js
         run: |
-          git config --global user.name 'github-actions[bot]'
+          git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          if ! grep -qx 'op.js' .gitignore 2>/dev/null; then
-            echo 'op.js' >> .gitignore
-          fi
-          git add .gitignore opp.js
+          git add dist/opp.js
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m 'build: generate obfuscated opp.js (header preserved)'
+            git commit -m "build: Generate obfuscated template file"
             git push
           fi
-
-      - name: Show opp.js preview (first 20 lines)
-        run: |
-          echo "===== opp.js (first 20 lines) ====="
-          head -n 20 opp.js || true
-          echo "==================================="
