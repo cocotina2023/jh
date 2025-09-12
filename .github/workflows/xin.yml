@@ -2,14 +2,6 @@ name: Obfuscate op.js from Repository
 
 on:
   workflow_dispatch:
-    inputs:
-      user_id:
-        description: '手動指定 UserID (必填)'
-        required: true
-      proxy_ips:
-        description: '代理 IP 列表 (可選，用逗號分隔，例如 1.1.1.1:80,2.2.2.2:8080)'
-        required: false
-        default: ''
 
 jobs:
   build-and-obfuscate:
@@ -34,10 +26,6 @@ jobs:
 
       # 4. 產生並混淆 JS 檔案
       - name: Generate and obfuscate op.js
-        env:
-          # 將兩個手動輸入的值都傳入環境變數
-          USER_ID: ${{ github.inputs.user_id }}
-          PROXY_IPS: ${{ github.inputs.proxy_ips }}
         run: |
           node -e "
           const fs = require('fs');
@@ -82,24 +70,13 @@ jobs:
 
           const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
 
-          // --- 核心邏輯：從環境變數讀取手動輸入的值 ---
-
-          // 1. 直接使用手動輸入的 userID
-          const userID = process.env.USER_ID;
-
-          // 2. 處理手動輸入的 proxyIPs
-          const proxyIPsRaw = process.env.PROXY_IPS || ''; // 讀取原始字串，預設為空
-          // 將逗號分隔的字串轉換成 JavaScript 陣列格式的字串，例如 '\"ip1\",\"ip2\"'
-          const proxyIPsFormatted = proxyIPsRaw ? proxyIPsRaw.split(',').map(ip => \`\"\${ip.trim()}\"\`).join(',') : '\"\"';
-          
-          const header = \`let userID = \"\${userID}\";\nconst proxyIPs = [\${proxyIPsFormatted}];\`;
+          // --- 核心修改：使用固定的預留位置文字 ---
+          const header = \`let userID = \"__USER_ID_PLACEHOLDER__\";\nconst proxyIPs = [__PROXY_IPS_PLACEHOLDER__];\`;
 
           const finalCode = header + '\n' + obfuscatedCode;
 
           fs.writeFileSync(outputFile, finalCode, 'utf8');
-          console.log(\`Obfuscated file written to \${outputFile}\`);
-          console.log(\`UserID from input: \${userID}\`);
-          console.log(\`Proxy IPs from input: \${proxyIPsRaw}\`);
+          console.log(\`Generated template file at \${outputFile}\`);
           "
 
       # 5. Commit 並 push opp.js
@@ -109,8 +86,4 @@ jobs:
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add dist/opp.js
           if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "build: Obfuscate op.js with specified inputs"
-            git push
-          fi
+            echo
