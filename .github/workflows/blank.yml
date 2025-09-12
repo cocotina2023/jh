@@ -69,8 +69,8 @@ jobs:
 
           const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
 
-          // --- 已移除版本註解 ---
-          const header = \`// @ts-ignore\nlet userID = \"86c50e3a-5b87-49dd-bd20-03c7f2735e40\";\nconst proxyIPs = [\"\"];\`;
+          // --- 已移除所有註解 ---
+          const header = \`let userID = \"86c50e3a-5b87-49dd-bd20-03c7f2735e40\";\nconst proxyIPs = [\"\"];\`;
 
           const finalCode = header + '\n\n' + obfuscatedCode;
 
