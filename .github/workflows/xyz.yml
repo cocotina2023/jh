@@ -1,10 +1,10 @@
-name: Obfuscate op.js (global install + NODE_PATH)
+name: Obfuscate op.js -> opp.js (preserve header, no UUID validation)
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-and-obfuscate:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -18,40 +18,48 @@ jobs:
         with:
           node-version: '18'
 
-      # ---- 全域安裝 obfuscator（方案 B） ----
-      - name: Install JavaScript Obfuscator globally
-        run: npm install -g javascript-obfuscator
+      - name: Install JavaScript Obfuscator (local)
+        run: npm install javascript-obfuscator
 
-      # 把全域安裝路徑加入 NODE_PATH，讓 require() 能找到全域模組
-      - name: Set NODE_PATH for global modules
-        run: |
-          echo "NODE_PATH=$(npm root -g)" >> $GITHUB_ENV
-          echo "NODE_PATH is set to: $(npm root -g)"
-
-      - name: Generate & obfuscate op.js -> dist/opp.js
+      - name: Build opp.js (preserve let userID header, safe combine)
         env:
-          # 確保 node process 可以看到 NODE_PATH（已經透過 GITHUB_ENV 設定）
-          NODE_PATH: ${{ env.NODE_PATH }}
+          NODE_OPTIONS: "--max-old-space-size=4096"
         run: |
           node <<'NODE'
           const fs = require('fs');
           const path = require('path');
-          // 這裡使用 require('javascript-obfuscator')，透過上面的 NODE_PATH 指定全域模組路徑
           const JavaScriptObfuscator = require('javascript-obfuscator');
 
-          const src = path.resolve('op.js');
-          const outDir = path.resolve('dist');
-          const out = path.join(outDir, 'opp.js');
+          const srcPath = path.resolve('op.js');
+          const outPath = path.resolve('opp.js');
 
-          if (!fs.existsSync(src)) {
-            console.error('Error: op.js not found at repo root');
+          if (!fs.existsSync(srcPath)) {
+            console.error('Error: op.js not found in repo root. Place your source op.js at repo root.');
             process.exit(1);
           }
-          if (!fs.existsSync(outDir)) fs.mkdirSync(outDir);
 
-          const originalCode = fs.readFileSync(src, 'utf8');
+          const src = fs.readFileSync(srcPath, 'utf8');
 
-          // Obfuscator options - renameGlobals disabled to avoid mangling global names
+          // Try to extract header: let userID = "..." ; const proxyIPs = [...];
+          const headerRegex = /let\s+userID\s*=\s*"([^"]*)"\s*;\s*[\r\n]+const\s+proxyIPs\s*=\s*\[[^\]]*\]\s*;?/i;
+          const m = src.match(headerRegex);
+
+          let headerText, bodyText;
+          if (m) {
+            headerText = m[0].trim();
+            // remove only the first occurrence of the matched header
+            const idx = src.indexOf(m[0]);
+            bodyText = src.slice(0, idx) + src.slice(idx + m[0].length);
+            // ensure the remainder is used as body
+            bodyText = bodyText;
+            console.log('Found header in op.js — preserving it.');
+          } else {
+            headerText = 'let userID = "a1b2c3d4-e5f6-7890-1234-567890abcdef";\nconst proxyIPs = [""];';
+            bodyText = src;
+            console.warn('Header not found in op.js — injecting default header.');
+          }
+
+          // Obfuscation options (do NOT rename globals so let userID remains userID)
           const options = {
             compact: true,
             controlFlowFlattening: true,
@@ -61,8 +69,7 @@ jobs:
             stringArray: true,
             stringArrayEncoding: ['base64'],
             stringArrayThreshold: 0.75,
-            // critical: avoid renaming global identifiers so header takes effect
-            renameGlobals: false,
+            renameGlobals: false, // keep global identifiers intact
             identifierNamesGenerator: 'mangled',
             numbersToExpressions: true,
             splitStrings: true,
@@ -73,72 +80,39 @@ jobs:
             disableConsoleOutput: true
           };
 
-          // Obfuscate the whole file (we'll ensure header is prepended afterwards)
-          const obf = JavaScriptObfuscator.obfuscate(originalCode, options).getObfuscatedCode();
+          const obf = JavaScriptObfuscator.obfuscate(bodyText, options).getObfuscatedCode();
 
-          // fixed header using globalThis so it won't be renamed and is easy to edit before deploy
-          const header = 'globalThis.userID = \"a1b2c3d4-e5f6-7890-1234-567890abcdef\";\\n' +
-                         'globalThis.proxyIPs = [\"\"];\\n\\n';
+          // SAFE combine: header + semicolon line + IIFE + obfuscated code
+          let final = headerText + '\n;\n(function(){\n' + obf + '\n})();\n';
 
-          // Combine header + obfuscated body
-          let final = header + '(function(){\\n' + obf + '\\n})();\\n';
-
-          // remove any injected comment lines like // <!--...--> or HTML comment markers
+          // Remove any injected comment markers like // <!--...--> or HTML comments
           final = final.replace(/^\/\/ *<!--.*-->.*$/gm, '');
           final = final.replace(/^\s*<!--.*-->.*$/gm, '');
 
-          fs.writeFileSync(out, final, 'utf8');
-          console.log('✅ dist/opp.js generated at', out);
-          // print preview
-          console.log('----- preview (first 20 lines) -----');
-          console.log(final.split(/\\r?\\n/).slice(0,20).join('\\n'));
-          console.log('------------------------------------');
+          fs.writeFileSync(outPath, final, 'utf8');
+          console.log('✅ opp.js generated at', outPath);
+          console.log('----- opp.js preview (first 20 lines) -----');
+          console.log(final.split(/\r?\n/).slice(0,20).join('\n'));
+          console.log('-------------------------------------------');
           NODE
 
-      - name: Validate header & UUID format in dist/opp.js
-        run: |
-          node -e "
-          const fs = require('fs');
-          const p = 'dist/opp.js';
-          if (!fs.existsSync(p)) { console.error('dist/opp.js not found'); process.exit(1); }
-          const txt = fs.readFileSync(p,'utf8');
-          if (!/globalThis\\.userID\\s*=/.test(txt)) {
-            console.error('❌ dist/opp.js missing globalThis.userID header');
-            process.exit(1);
-          }
-          if (!/globalThis\\.proxyIPs\\s*=/.test(txt)) {
-            console.error('❌ dist/opp.js missing globalThis.proxyIPs header');
-            process.exit(1);
-          }
-          const m = txt.match(/globalThis\\.userID\\s*=\\s*\"([^\\\"]+)\"/);
-          if (!m) { console.error('❌ cannot parse globalThis.userID value'); process.exit(1); }
-          const uuid = m[1].trim();
-          const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          if (!uuidRe.test(uuid)) {
-            console.error('❌ globalThis.userID does not match UUID pattern:', uuid);
-            process.exit(1);
-          }
-          console.log('✅ Header & UUID validated:', uuid);
-          "
-
-      - name: Commit and push dist/opp.js
+      - name: Ensure op.js ignored and commit opp.js
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          # ensure op.js ignored to avoid leaking source (optional)
           if ! grep -qx 'op.js' .gitignore 2>/dev/null; then
             echo 'op.js' >> .gitignore
           fi
-          git add .gitignore dist/opp.js
+          git add .gitignore opp.js
           if git diff --staged --quiet; then
-            echo 'No changes to commit'
+            echo "No changes to commit"
           else
-            git commit -m 'build: generate obfuscated dist/opp.js'
+            git commit -m 'build: generate obfuscated opp.js (header preserved)'
             git push
           fi
 
-      - name: Show preview for easy copy
+      - name: Show opp.js preview (first 20 lines)
         run: |
-          echo '===== dist/opp.js (first 20 lines) ====='
-          head -n 20 dist/opp.js || true
-          echo '======================================='
+          echo "===== opp.js (first 20 lines) ====="
+          head -n 20 opp.js || true
+          echo "==================================="
