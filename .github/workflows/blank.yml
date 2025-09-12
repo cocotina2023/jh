@@ -1,5 +1,5 @@
 
-name: Obfuscate op.js from Repository
+name: Obfuscate op.js from blank
 
 on:
   # 設置為手動觸發
