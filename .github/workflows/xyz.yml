@@ -1,4 +1,4 @@
-name: Obfuscate op.js xyz
+name: Obfuscate op.js -> dist/opp.js
 
 on:
   workflow_dispatch:
@@ -21,23 +21,19 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      - name: Generate and obfuscate op.js
+      - name: Generate and obfuscate opp.js
         run: |
+          mkdir -p dist
           node <<'NODE'
           const fs = require('fs');
-          const path = require('path');
           const JavaScriptObfuscator = require('javascript-obfuscator');
 
           const sourceFile = 'op.js';
           const outputFile = 'dist/opp.js';
 
           if (!fs.existsSync(sourceFile)) {
-            console.error(`Error: ${sourceFile} not found!`);
+            console.error(\`Error: \${sourceFile} not found!\`);
             process.exit(1);
-          }
-
-          if (!fs.existsSync('dist')) {
-            fs.mkdirSync('dist');
           }
 
           const originalCode = fs.readFileSync(sourceFile, 'utf8');
@@ -51,7 +47,7 @@ jobs:
             stringArray: true,
             stringArrayEncoding: ['base64'],
             stringArrayThreshold: 0.75,
-            renameGlobals: false, // 保证 userID / proxyIPs 不被混淆
+            renameGlobals: true,
             identifierNamesGenerator: 'mangled',
             numbersToExpressions: true,
             splitStrings: true,
@@ -65,14 +61,15 @@ jobs:
             .obfuscate(originalCode, obfuscationOptions)
             .getObfuscatedCode();
 
-          // 固定 header
+          // 明文 header，不混淆
           const header = `let userID = "a1b2c3d4-e5f6-7890-1234-567890abcdef";
           const proxyIPs = [""];`;
 
+          // 拼接
           const finalCode = header + '\n' + obfuscatedCode;
 
           fs.writeFileSync(outputFile, finalCode, 'utf8');
-          console.log("✅ Generated dist/opp.js with fixed header");
+          console.log("✅ Generated dist/opp.js with clear header");
           NODE
 
       - name: Commit and push opp.js
@@ -83,6 +80,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "build: Generate obfuscated template file"
+            git commit -m "build: generate obfuscated opp.js with clear header"
             git push
           fi
