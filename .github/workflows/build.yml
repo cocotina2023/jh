@@ -7,7 +7,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # ✅ 允許 push 回 repo
+      contents: write   # 允許 push 回 repo
 
     steps:
       # 1. Checkout repo
@@ -24,19 +24,18 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install -g javascript-obfuscator
 
-      # 4. Obfuscate everything except header
-      - name: Build opp.js (keep header)
+      # 4. Build opp.js (keep header, overwrite root opp.js)
+      - name: Obfuscate op.js
         run: |
-          mkdir -p dist
+          # 提取 header（前两行保留原样）
+          head -n 2 op.js > header.js
 
-          # 提取前兩行 header（不混淆）
-          head -n 2 op.js > dist/header.js
+          # 其余部分
+          tail -n +3 op.js > body.js
 
-          # 剩餘代碼混淆
-          tail -n +3 op.js > dist/body.js
-
-          javascript-obfuscator dist/body.js \
-            --output dist/body.obf.js \
+          # 混淆 body
+          javascript-obfuscator body.js \
+            --output body.tmp.js \
             --compact true \
             --control-flow-flattening true \
             --control-flow-flattening-threshold 0.75 \
@@ -55,17 +54,22 @@ jobs:
             --debug-protection false \
             --disable-console-output true
 
-          # 合併 header + 混淆後代碼
-          cat dist/header.js dist/body.obf.js > dist/opp.js
+          # 手动加 IIFE 包裹
+          echo "(function(){" > body.obf.js
+          cat body.tmp.js >> body.obf.js
+          echo "})();" >> body.obf.js
 
-          echo "✅ Generated dist/opp.js with preserved header"
+          # 合并 header + 混淆 body → 覆盖根目录 opp.js
+          cat header.js body.obf.js > opp.js
+
+          echo "✅ Generated opp.js at project root"
 
       # 5. Commit 回 repo
       - name: Commit and push opp.js
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add dist/opp.js
+          git add opp.js
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
