@@ -59,13 +59,13 @@ jobs:
           cat body.tmp.js >> body.obf.js
           echo "})();" >> body.obf.js
 
-          # 移除所有类似 // <!-- ... --> 的注释行
-          sed -i '/^\/\/ *<!--.*-->.*$/d' body.obf.js
-
           # 合并 header + 混淆 body → 覆盖根目录 opp.js
           cat header.js body.obf.js > opp.js
 
-          echo "✅ Generated opp.js at project root (clean, no injected comments)"
+          # 🔥 清理掉所有 // <!-- ... --> 的注释行
+          sed -i '/^\/\/ *<!--.*-->.*$/d' opp.js
+
+          echo "✅ Generated opp.js at project root (no GAMFC header)"
 
       # 5. Commit 回 repo（只提交 opp.js，不提交 op.js）
       - name: Commit and push opp.js
@@ -80,3 +80,10 @@ jobs:
             git commit -m 'build: generate obfuscated opp.js'
             git push
           fi
+
+      # 6. 打印生成文件前 10 行，方便检查
+      - name: Preview opp.js
+        run: |
+          echo "===== Preview opp.js (first 10 lines) ====="
+          head -n 10 opp.js
+          echo "=========================================="
