@@ -1,71 +1,116 @@
-name: blank.yml
+
+name: Obfuscate op.js from Repository
 
 on:
-  workflow_dispatch:  # 只保留手动触发
+  # 設置為手動觸發
+  workflow_dispatch:
+  # 當 op.js 文件有變更並推送到 main 分支時也會觸發
+  push:
+    branches:
+      - main  # 或者您的默認分支名，如 master
+    paths:
+      - 'op.js'
 
 jobs:
   build-and-obfuscate:
     runs-on: ubuntu-latest
 
+    # 授予 workflow 推送代碼的權限
+    permissions:
+      contents: write
+
     steps:
+      # 1. 簽出您的倉庫代碼，這樣才能讀取到 op.js
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. 設置 Node.js 環境
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      - name: Install Obfuscator
+      # 3. 安裝混淆工具
+      - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      - name: Create source file and obfuscate
+      # 4. 生成並混淆為 opp.js (添加了 reservedNames 選項)
+      - name: Generate and obfuscate to opp.js
         run: |
-          node -e "
-            const JavaScriptObfuscator = require('javascript-obfuscator');
-            const fs = require('fs');
-            
-            const originalCode = process.env.SOURCE_CODE;
-            if (!originalCode || originalCode.length < 50) {
-              console.error('Error: Source code from secrets is missing or empty.');
-              process.exit(1);
-            }
+          # 步驟 4.1: 將混淆邏輯寫入一個臨時的 JS 腳本文件
+          cat > obfuscate-temp.js <<'EOF'
+          const fs = require("fs");
+          const path = require("path");
+          const JavaScriptObfuscator = require("javascript-obfuscator");
 
-            // --- 最终平衡型混淆配置 ---
-            const obfuscationOptions = {
-                compact: true,
-                controlFlowFlattening: true,
-                controlFlowFlatteningThreshold: 0.75,
-                deadCodeInjection: true,
-                deadCodeInjectionThreshold: 0.4,
-                stringArray: true,
-                stringArrayEncoding: ['base64'],
-                stringArrayThreshold: 0.75,
-                renameGlobals: true,
-                identifierNamesGenerator: 'mangled',
-                numbersToExpressions: true,
-                splitStrings: true,
-                splitStringsChunkLength: 10,
-                transformObjectKeys: true,
-                selfDefending: false,
-                debugProtection: false,
-            };
+          const sourceFile = "op.js";
+          const outputDir = "dist";
+          const outputFile = path.join(outputDir, "opp.js");
 
-            const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
-            
-            fs.writeFileSync('./opfsa', obfuscatedCode, 'utf8');
-          "
-        env:
-          SOURCE_CODE: ${{ secrets.WORKER_SOURCE_CODE }}
+          // 檢查源文件是否存在
+          if (!fs.existsSync(sourceFile)) {
+            console.error(`错误：源文件 ${sourceFile} 未找到！`);
+            process.exit(1);
+          }
+          
+          // 確保輸出目錄存在
+          if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir);
+          }
 
+          const originalCode = fs.readFileSync(sourceFile, "utf8");
+
+          // --- 混淆配置 (這是確保能被 Cloudflare 識別，並保留指定變數的關鍵) ---
+          const obfuscationOptions = {
+              // 保持 ES Module 結構，以便 Cloudflare 識別
+              esModule: true,
+              
+              // 啟用全局變數名混淆
+              renameGlobals: true,
+              
+              // 新增：告訴混淆器不要重命名這些變數
+              reservedNames: ['userID', 'proxyIPs'],
+
+              // --- 其他保持不變的混淆選項 ---
+              compact: true,
+              controlFlowFlattening: true,
+              controlFlowFlatteningThreshold: 0.75,
+              deadCodeInjection: true,
+              deadCodeInjectionThreshold: 0.4,
+              stringArray: true,
+              stringArrayEncoding: ['base64'],
+              stringArrayThreshold: 0.75,
+              identifierNamesGenerator: 'mangled',
+              numbersToExpressions: true,
+              splitStrings: true,
+              splitStringsChunkLength: 10,
+              transformObjectKeys: true,
+              selfDefending: false,
+              debugProtection: false
+          };
+
+          console.log(`正在從 ${sourceFile} 讀取並混淆代碼...`);
+          const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
+          console.log("代碼混淆完成。");
+
+          fs.writeFileSync(outputFile, obfuscatedCode, "utf8");
+          console.log(`混淆後的文件已保存到: ${outputFile}`);
+          EOF
+
+          # 步驟 4.2: 執行剛剛創建的臨時腳本
+          node obfuscate-temp.js
+
+      # 5. 將生成的 dist/opp.js 文件提交並推送到倉庫
       - name: Commit and push the obfuscated file
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add 'opfsa'
+          
+          git add dist/opp.js
+          
           if git diff --staged --quiet; then
-            echo "No changes to commit, the obfuscated file is already up-to-date."
+            echo "No changes to commit, dist/opp.js is already up-to-date."
           else
-            git commit -m "build: Generate and obfuscate worker script"
+            git commit -m "build: Obfuscate op.js to dist/opp.js"
             git push
           fi
