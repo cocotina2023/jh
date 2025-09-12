@@ -3,12 +3,12 @@ name: Obfuscate op.js from Repository
 on:
   # 設置為手動觸發
   workflow_dispatch:
-  # 您也可以在推送到主分支時觸發
+  # 當 op.js 文件有變更並推送到 main 分支時也會觸發
   push:
     branches:
       - main  # 或者您的默認分支名，如 master
     paths:
-      - 'op.js' # 只有 op.js 文件變更時才觸發
+      - 'op.js'
 
 jobs:
   build-and-obfuscate:
@@ -33,7 +33,7 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # 4. 生成並混淆為 opp.js (使用您提供的思路)
+      # 4. 生成並混淆為 opp.js (已加入 esModule: true)
       - name: Generate and obfuscate to opp.js
         run: |
           # 步驟 4.1: 將混淆邏輯寫入一個臨時的 JS 腳本文件
@@ -59,8 +59,11 @@ jobs:
 
           const originalCode = fs.readFileSync(sourceFile, "utf8");
 
-          // --- 混淆配置 (使用我們之前用過的配置) ---
+          // --- 混淆配置 (這是確保能被 Cloudflare 識別的關鍵) ---
           const obfuscationOptions = {
+              // 關鍵行：保持 ES Module 結構，以便 Cloudflare 識別
+              esModule: true,
+
               compact: true,
               controlFlowFlattening: true,
               controlFlowFlatteningThreshold: 0.75,
@@ -96,10 +99,8 @@ jobs:
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           
-          # 添加生成的混淆文件
           git add dist/opp.js
           
-          # 檢查是否有文件變動，如果沒有變動則不執行提交
           if git diff --staged --quiet; then
             echo "No changes to commit, dist/opp.js is already up-to-date."
           else
