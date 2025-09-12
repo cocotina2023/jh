@@ -1,7 +1,7 @@
 name: Generate and Obfuscate Worker Script
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # 仅手动触发
 
 jobs:
   build-and-obfuscate:
