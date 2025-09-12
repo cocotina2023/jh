@@ -1,7 +1,7 @@
 name: Generate and Obfuscate Worker Script
 
 on:
-  workflow_dispatch:  # 只保留手动触发
+  workflow_dispatch:  # 仅手动触发
 
 jobs:
   build-and-obfuscate:
@@ -24,14 +24,14 @@ jobs:
           node -e "
             const JavaScriptObfuscator = require('javascript-obfuscator');
             const fs = require('fs');
-            
+
             const originalCode = process.env.SOURCE_CODE;
             if (!originalCode || originalCode.length < 50) {
               console.error('Error: Source code from secrets is missing or empty.');
               process.exit(1);
             }
 
-            // --- 最终平衡型混淆配置 ---
+            // --- 混淆配置 ---
             const obfuscationOptions = {
                 compact: true,
                 controlFlowFlattening: true,
@@ -49,6 +49,8 @@ jobs:
                 transformObjectKeys: true,
                 selfDefending: false,
                 debugProtection: false,
+
+                // 保留 userID 和 proxyIP 原始名称不混淆
                 reservedNames: ['userID', 'proxyIP'],
             };
 
@@ -63,7 +65,7 @@ jobs:
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add 'opfsa'
+          git add opfsa
           if git diff --staged --quiet; then
             echo "No changes to commit, the obfuscated file is already up-to-date."
           else
