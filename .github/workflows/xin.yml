@@ -71,7 +71,7 @@ jobs:
           const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
 
           // --- 核心修改：使用固定的預留位置文字 ---
-          const header = \`let userID = \"USER_ID_PLACEHOLDER\";\nconst proxyIPs = "PROXY_IPS_PLACEHOLDER";\`;
+          const header = \`let userID = \"a1b2c3d4-e5f6-7890-1234-567890abcdef\";\nconst proxyIPs = [\"\"];\`;
 
           const finalCode = header + '\n' + obfuscatedCode;
 
