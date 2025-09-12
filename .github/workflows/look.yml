@@ -1,0 +1,106 @@
+name: Obfuscate op.js from Repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      custom_uuid:
+        description: '手動指定 UserID (可選，留空則自動產生)'
+        required: false
+        default: ''
+
+jobs:
+  build-and-obfuscate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # 1. Checkout 倉庫
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. 設定 Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      # 3. 安裝混淆工具
+      - name: Install JavaScript Obfuscator
+        run: npm install javascript-obfuscator
+
+      # 4. 產生並混淆 JS 檔案
+      - name: Generate and obfuscate op.js
+        env:
+          # 將手動輸入的值傳入環境變數
+          CUSTOM_UUID: ${{ github.inputs.custom_uuid }}
+        run: |
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+          const crypto = require('crypto');
+          const JavaScriptObfuscator = require('javascript-obfuscator');
+
+          const sourceFile = 'op.js';
+          const outputDir = 'dist';
+          const outputFile = path.join(outputDir, 'opp.js');
+
+          if (!fs.existsSync(sourceFile)) {
+            console.error(\`Error: \${sourceFile} not found!\`);
+            process.exit(1);
+          }
+
+          if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir);
+          }
+
+          const originalCode = fs.readFileSync(sourceFile, 'utf8');
+
+          const obfuscationOptions = {
+            // ... (您的混淆選項不變)
+            esModule: true,
+            compact: true,
+            controlFlowFlattening: true,
+            controlFlowFlatteningThreshold: 0.75,
+            deadCodeInjection: true,
+            deadCodeInjectionThreshold: 0.4,
+            stringArray: true,
+            stringArrayEncoding: ['base64'],
+            stringArrayThreshold: 0.75,
+            renameGlobals: true,
+            identifierNamesGenerator: 'mangled',
+            numbersToExpressions: true,
+            splitStrings: true,
+            splitStringsChunkLength: 10,
+            transformObjectKeys: true,
+            selfDefending: false,
+            debugProtection: false
+          };
+
+          const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
+
+          // --- 核心邏輯：優先使用手動輸入的UUID，否則自動產生 ---
+          // process.env.CUSTOM_UUID 讀取從外面傳入的環境變數
+          const userID = process.env.CUSTOM_UUID || crypto.randomUUID();
+          
+          const header = \`let userID = \"\${userID}\";\nconst proxyIPs = [\"\"];\`;
+
+          const finalCode = header + '\n' + obfuscatedCode;
+
+          fs.writeFileSync(outputFile, finalCode, 'utf8');
+          console.log(\`Obfuscated file written to \${outputFile}\`);
+          console.log(\`Final UserID used: \${userID}\`);
+          "
+
+      # 5. Commit 並 push opp.js
+      - name: Commit and push opp.js
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add dist/opp.js
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "build: Obfuscate op.js with specified/generated UUID"
+            git push
+          fi
