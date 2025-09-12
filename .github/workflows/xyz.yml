@@ -68,7 +68,7 @@ jobs:
             .getObfuscatedCode();
 
           const header = `let userID = "a1b2c3d4-e5f6-7890-1234-567890abcdef";
-const proxyIPs = [""];`;
+          const proxyIPs = [""];`;
 
           const finalCode = header + '\n' + obfuscatedCode;
 
