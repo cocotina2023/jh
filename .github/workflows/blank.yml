@@ -70,7 +70,7 @@ jobs:
           const header = `// version base on commit 43fad05dcdae3b723c53c226f8181fc5bd47223e
 // @ts-ignore
 let userID = "86c50e3a-5b87-49dd-bd20-03c7f2735e40";
-const proxyIPs = [""];`;
+const proxyIPs = [""];
 
           const finalCode = header + "\n\n" + obfuscatedCode;
 
