@@ -1,4 +1,4 @@
-name: Obfuscate op.js from Repository
+name: Obfuscate op.js blank
 
 on:
   workflow_dispatch:  # 允許手動觸發
@@ -69,10 +69,10 @@ jobs:
 
           const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
 
-          // --- 已移除所有註解 ---
           const header = \`let userID = \"86c50e3a-5b87-49dd-bd20-03c7f2735e40\";\nconst proxyIPs = [\"\"];\`;
 
-          const finalCode = header + '\n\n' + obfuscatedCode;
+          // --- 就是修改這裡來移除空行 ---
+          const finalCode = header + '\n' + obfuscatedCode;
 
           fs.writeFileSync(outputFile, finalCode, 'utf8');
           console.log(\`Obfuscated file written to \${outputFile}\`);
