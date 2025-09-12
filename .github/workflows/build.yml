@@ -1,112 +1,66 @@
-name: Obfuscate op.js and inject UUID header
+name: Obfuscate op.js
 
 on:
   workflow_dispatch:
-    inputs:
-      uuid:
-        description: 'Optional: UUID to embed into generated file (overrides secrets.UUID). Leave empty to use secrets.UUID'
-        required: false
-        default: ''
 
 jobs:
-  build-and-obfuscate:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
+      # 1. Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      # 2. Setup Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: 18
 
-      - name: Install dependencies
-        run: npm install javascript-obfuscator
+      # 3. Install obfuscator
+      - name: Install JavaScript Obfuscator
+        run: npm install -g javascript-obfuscator
 
-      # Build + Obfuscate + Inject header
-      - name: Generate and obfuscate op.js (inject UUID header)
-        env:
-          # Priority: workflow input -> repository secret -> hardcoded fallback
-          UUID_INPUT: ${{ github.event.inputs.uuid }}
-          UUID_SECRET: ${{ secrets.UUID }}
+      # 4. Obfuscate everything except header
+      - name: Build opp.js (keep header)
         run: |
-          node <<'NODE'
-          const fs = require('fs');
-          const path = require('path');
-          const JavaScriptObfuscator = require('javascript-obfuscator');
+          mkdir -p dist
 
-          const sourceFile = 'op.js';
-          const outputDir = 'dist';
-          const outputFile = path.join(outputDir, 'opp.js');
+          # 提取前兩行 header（不混淆）
+          head -n 2 op.js > dist/header.js
 
-          if (!fs.existsSync(sourceFile)) {
-            console.error(`Error: ${sourceFile} not found!`);
-            process.exit(1);
-          }
+          # 剩餘代碼混淆
+          tail -n +3 op.js > dist/body.js
 
-          if (!fs.existsSync(outputDir)) {
-            fs.mkdirSync(outputDir);
-          }
+          javascript-obfuscator dist/body.js \
+            --output dist/body.obf.js \
+            --compact true \
+            --control-flow-flattening true \
+            --control-flow-flattening-threshold 0.75 \
+            --dead-code-injection true \
+            --dead-code-injection-threshold 0.4 \
+            --string-array true \
+            --string-array-encoding base64 \
+            --string-array-threshold 0.75 \
+            --rename-globals true \
+            --identifier-names-generator mangled \
+            --numbers-to-expressions true \
+            --split-strings true \
+            --split-strings-chunk-length 10 \
+            --transform-object-keys true \
+            --self-defending false \
+            --debug-protection false \
+            --disable-console-output true
 
-          const originalCode = fs.readFileSync(sourceFile, 'utf8');
+          # 合併 header + 混淆後代碼
+          cat dist/header.js dist/body.obf.js > dist/opp.js
 
-          const obfuscationOptions = {
-            esModule: true,
-            compact: true,
-            controlFlowFlattening: true,
-            controlFlowFlatteningThreshold: 0.75,
-            deadCodeInjection: true,
-            deadCodeInjectionThreshold: 0.4,
-            stringArray: true,
-            stringArrayEncoding: ['base64'],
-            stringArrayThreshold: 0.75,
-            renameGlobals: true,
-            identifierNamesGenerator: 'mangled',
-            numbersToExpressions: true,
-            splitStrings: true,
-            splitStringsChunkLength: 10,
-            transformObjectKeys: true,
-            selfDefending: false,
-            debugProtection: false
-          };
+          echo "✅ Generated dist/opp.js with preserved header"
 
-          const obfuscatedCode = JavaScriptObfuscator
-                                    .obfuscate(originalCode, obfuscationOptions)
-                                    .getObfuscatedCode();
-
-          // Determine UUID precedence
-          const uuidInput = process.env.UUID_INPUT && process.env.UUID_INPUT.trim();
-          const uuidSecret = process.env.UUID_SECRET && process.env.UUID_SECRET.trim();
-          const finalUUID = uuidInput || uuidSecret || 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
-
-          // Create header lines exactly as you requested
-          const header = `let userID = "${finalUUID}";\nconst proxyIPs = [""];`;
-
-          const finalCode = header + '\n\n' + obfuscatedCode;
-
-          fs.writeFileSync(outputFile, finalCode, 'utf8');
-          console.log(`Generated obfuscated file with injected UUID at: ${outputFile}`);
-          NODE
-
-      # OPTIONAL: commit generated file back to repo (comment out if you DON'T want to commit)
-      - name: Commit and push dist/opp.js (optional)
-        if: always()
-        run: |
-          git config --global user.name 'GitHub Actions Bot'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add dist/opp.js
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "build: generate obfuscated opp.js with injected UUID"
-            git push
-          fi
-
-      # ALTERNATIVE: deploy directly (example placeholder)
-      # - name: Deploy dist/opp.js to target
-      #   run: |
-      #     # example: npx wrangler publish dist/opp.js
-      #     echo "Deploy step - put your deployment command here"
+      # 5. Upload artifact
+      - name: Upload opp.js
+        uses: actions/upload-artifact@v4
+        with:
+          name: opp.js
+          path: dist/opp.js
