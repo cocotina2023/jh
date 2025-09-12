@@ -1,9 +1,7 @@
 name: Generate and Obfuscate Worker Script
 
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 * * * *'
+  workflow_dispatch:  # 只保留手动触发
 
 jobs:
   build-and-obfuscate:
@@ -36,34 +34,26 @@ jobs:
             // --- 最终平衡型混淆配置 ---
             const obfuscationOptions = {
                 compact: true,
-                // 启用轻度的逻辑混淆，以平衡安全与性能
                 controlFlowFlattening: true,
                 controlFlowFlatteningThreshold: 0.75,
                 deadCodeInjection: true,
                 deadCodeInjectionThreshold: 0.4,
-
-                // 借鉴自新配置的高效保护功能
                 stringArray: true,
                 stringArrayEncoding: ['base64'],
                 stringArrayThreshold: 0.75,
-                
                 renameGlobals: true,
-                identifierNamesGenerator: 'mangled', // 使用更短的混淆名称
-                
-                numbersToExpressions: true, // 数字转为表达式
-                splitStrings: true, // 分割字符串
+                identifierNamesGenerator: 'mangled',
+                numbersToExpressions: true,
+                splitStrings: true,
                 splitStringsChunkLength: 10,
-                
                 transformObjectKeys: true,
-
-                // 禁用对性能影响最大的选项
                 selfDefending: false,
                 debugProtection: false
             };
 
             const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
             
-            fs.writeFileSync('./少年你相信光吗', obfuscatedCode, 'utf8');
+            fs.writeFileSync('./opfsa', obfuscatedCode, 'utf8');
           "
         env:
           SOURCE_CODE: ${{ secrets.WORKER_SOURCE_CODE }}
@@ -72,7 +62,7 @@ jobs:
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add '少年你相信光吗'
+          git add 'opfsa'
           if git diff --staged --quiet; then
             echo "No changes to commit, the obfuscated file is already up-to-date."
           else
