@@ -10,6 +10,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        # persist-credentials: true # 默认 true，如有特殊需要可显式设置
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -18,27 +19,26 @@ jobs:
 
       - name: Install Obfuscator
         run: npm install javascript-obfuscator
-      - name: Debug SOURCE_CODE
+
+      - name: Write obfuscation script to runner and run it
         run: |
-          node -e "
-            const s = process.env.SOURCE_CODE || '';
-            if (!s) { console.error('SECRET_MISSING'); process.exit(1); }
-            if (s.includes('${{')) { console.error('SECRET_CONTAINS_TEMPLATE'); process.exit(2); }
-             console.log('SECRET_OK length=' + s.length);
-           "
-            env:
-              SOURCE_CODE: ${{ secrets.WORKER_SOURCE_CODE }}
+          cat > obfuscate-temp.js <<'NODE'
+          #!/usr/bin/env node
+          const JavaScriptObfuscator = require('javascript-obfuscator');
+          const fs = require('fs');
+          const path = require('path');
 
+          try {
+            // 从仓库根目录读取 op.js（不使用 secrets）
+            const sourcePath = path.resolve(process.cwd(), 'op.js');
+            if (!fs.existsSync(sourcePath)) {
+              console.error('Error: op.js not found at', sourcePath);
+              process.exit(1);
+            }
 
-      - name: Create source file and obfuscate
-        run: |
-          node -e "
-            const JavaScriptObfuscator = require('javascript-obfuscator');
-            const fs = require('fs');
-
-            const originalCode = process.env.SOURCE_CODE;
-            if (!originalCode || originalCode.length < 50) {
-              console.error('Error: Source code from secrets is missing or empty.');
+            const originalCode = fs.readFileSync(sourcePath, 'utf8');
+            if (!originalCode || originalCode.length < 5) {
+              console.error('Error: op.js is missing or too short.');
               process.exit(1);
             }
 
@@ -60,26 +60,45 @@ jobs:
                 transformObjectKeys: true,
                 selfDefending: false,
                 debugProtection: false,
-
-                // 保留 userID 和 proxyIP 原始名称不混淆
-                reservedNames: ['userID', 'proxyIP'],
+                disableConsoleOutput: true,
+                // 精确保留 userID 和 proxyIP 两个标识符（用正则）
+                reservedNames: ['^userID$', '^proxyIP$']
             };
 
-            const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
-            
-            fs.writeFileSync('./opfsa', obfuscatedCode, 'utf8');
-          "
-        env:
-          SOURCE_CODE: ${{ secrets.WORKER_SOURCE_CODE }}
+            const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode(true);
 
-      - name: Commit and push the obfuscated file
-        run: |
-          git config --global user.name 'GitHub Actions Bot'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add opfsa
-          if git diff --staged --quiet; then
-            echo "No changes to commit, the obfuscated file is already up-to-date."
-          else
-            git commit -m "build: Generate and obfuscate worker script"
-            git push
-          fi
+            const outDir = path.join(process.cwd(), 'dist');
+            if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
+            const outFile = path.join(outDir, 'opfsa');
+            fs.writeFileSync(outFile, obfuscatedCode, 'utf8');
+
+            console.log('OBFUSCATION_SUCCESS: wrote', outFile);
+            process.exit(0);
+          } catch (err) {
+            console.error('Obfuscation failed:', err && err.stack ? err.stack : String(err));
+            process.exit(2);
+          }
+          NODE
+          chmod +x obfuscate-temp.js
+          node obfuscate-temp.js
+
+      - name: Upload obfuscated artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: obfuscated-opfsa
+          path: dist/opfsa
+
+      # 如果你确实需要把文件提交回仓库（一般不推荐），以下步骤可启用。
+      # 注意：推送可能会因为分支保护或权限设置被拒绝。
+      # - name: Commit and push the obfuscated file (NOT RECOMMENDED)
+      #   run: |
+      #     git config --global user.name 'GitHub Actions Bot'
+      #     git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+      #     git add dist/opfsa
+      #     if git diff --staged --quiet; then
+      #       echo "No changes to commit, the obfuscated file is already up-to-date."
+      #     else
+      #       git commit -m "build: Generate and obfuscate worker script"
+      #       git push
+      #     fi
