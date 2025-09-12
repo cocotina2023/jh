@@ -1,5 +1,4 @@
-
-name: Obfuscate op.js -> dist/opp.js (preserve header, commit result)
+name: Obfuscate op.js xyz
 
 on:
   workflow_dispatch:
@@ -20,7 +19,9 @@ jobs:
           node-version: '18'
 
       - name: Install JavaScript Obfuscator
-        run: npm install javascript-obfuscator- name: Generate and obfuscate op.js
+        run: npm install javascript-obfuscator
+
+      - name: Generate and obfuscate op.js
         run: |
           node <<'NODE'
           const fs = require('fs');
@@ -28,11 +29,15 @@ jobs:
           const JavaScriptObfuscator = require('javascript-obfuscator');
 
           const sourceFile = 'op.js';
-          const outputFile = 'opp.js';
+          const outputFile = 'dist/opp.js';
 
           if (!fs.existsSync(sourceFile)) {
             console.error(`Error: ${sourceFile} not found!`);
             process.exit(1);
+          }
+
+          if (!fs.existsSync('dist')) {
+            fs.mkdirSync('dist');
           }
 
           const originalCode = fs.readFileSync(sourceFile, 'utf8');
@@ -46,7 +51,7 @@ jobs:
             stringArray: true,
             stringArrayEncoding: ['base64'],
             stringArrayThreshold: 0.75,
-            renameGlobals: true,
+            renameGlobals: false, // 保证 userID / proxyIPs 不被混淆
             identifierNamesGenerator: 'mangled',
             numbersToExpressions: true,
             splitStrings: true,
@@ -56,23 +61,20 @@ jobs:
             debugProtection: false
           };
 
-          // 混淆核心代码
           const obfuscatedCode = JavaScriptObfuscator
             .obfuscate(originalCode, obfuscationOptions)
             .getObfuscatedCode();
 
-          // 明文 header，永远不会被混淆
+          // 固定 header
           const header = `let userID = "a1b2c3d4-e5f6-7890-1234-567890abcdef";
           const proxyIPs = [""];`;
 
-          // 拼接：先 header，再混淆代码
           const finalCode = header + '\n' + obfuscatedCode;
 
           fs.writeFileSync(outputFile, finalCode, 'utf8');
-          console.log("✅ Generated opp.js with editable UUID at top");
+          console.log("✅ Generated dist/opp.js with fixed header");
           NODE
 
-      # 5. Commit 并 push opp.js
       - name: Commit and push opp.js
         run: |
           git config --global user.name 'GitHub Actions Bot'
