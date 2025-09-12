@@ -1,0 +1,116 @@
+name: Obfuscate op.js from Repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: '手動指定 UserID (必填)'
+        required: true
+      proxy_ips:
+        description: '代理 IP 列表 (可選，用逗號分隔，例如 1.1.1.1:80,2.2.2.2:8080)'
+        required: false
+        default: ''
+
+jobs:
+  build-and-obfuscate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # 1. Checkout 倉庫
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. 設定 Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      # 3. 安裝混淆工具
+      - name: Install JavaScript Obfuscator
+        run: npm install javascript-obfuscator
+
+      # 4. 產生並混淆 JS 檔案
+      - name: Generate and obfuscate op.js
+        env:
+          # 將兩個手動輸入的值都傳入環境變數
+          USER_ID: ${{ github.inputs.user_id }}
+          PROXY_IPS: ${{ github.inputs.proxy_ips }}
+        run: |
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+          const JavaScriptObfuscator = require('javascript-obfuscator');
+
+          const sourceFile = 'op.js';
+          const outputDir = 'dist';
+          const outputFile = path.join(outputDir, 'opp.js');
+
+          if (!fs.existsSync(sourceFile)) {
+            console.error(\`Error: \${sourceFile} not found!\`);
+            process.exit(1);
+          }
+
+          if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir);
+          }
+
+          const originalCode = fs.readFileSync(sourceFile, 'utf8');
+
+          const obfuscationOptions = {
+            // ... (您的混淆選項不變)
+            esModule: true,
+            compact: true,
+            controlFlowFlattening: true,
+            controlFlowFlatteningThreshold: 0.75,
+            deadCodeInjection: true,
+            deadCodeInjectionThreshold: 0.4,
+            stringArray: true,
+            stringArrayEncoding: ['base64'],
+            stringArrayThreshold: 0.75,
+            renameGlobals: true,
+            identifierNamesGenerator: 'mangled',
+            numbersToExpressions: true,
+            splitStrings: true,
+            splitStringsChunkLength: 10,
+            transformObjectKeys: true,
+            selfDefending: false,
+            debugProtection: false
+          };
+
+          const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
+
+          // --- 核心邏輯：從環境變數讀取手動輸入的值 ---
+
+          // 1. 直接使用手動輸入的 userID
+          const userID = process.env.USER_ID;
+
+          // 2. 處理手動輸入的 proxyIPs
+          const proxyIPsRaw = process.env.PROXY_IPS || ''; // 讀取原始字串，預設為空
+          // 將逗號分隔的字串轉換成 JavaScript 陣列格式的字串，例如 '\"ip1\",\"ip2\"'
+          const proxyIPsFormatted = proxyIPsRaw ? proxyIPsRaw.split(',').map(ip => \`\"\${ip.trim()}\"\`).join(',') : '\"\"';
+          
+          const header = \`let userID = \"\${userID}\";\nconst proxyIPs = [\${proxyIPsFormatted}];\`;
+
+          const finalCode = header + '\n' + obfuscatedCode;
+
+          fs.writeFileSync(outputFile, finalCode, 'utf8');
+          console.log(\`Obfuscated file written to \${outputFile}\`);
+          console.log(\`UserID from input: \${userID}\`);
+          console.log(\`Proxy IPs from input: \${proxyIPsRaw}\`);
+          "
+
+      # 5. Commit 並 push opp.js
+      - name: Commit and push opp.js
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add dist/opp.js
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "build: Obfuscate op.js with specified inputs"
+            git push
+          fi
