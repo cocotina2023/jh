@@ -27,7 +27,7 @@ jobs:
       # 4. 直接用 node -e 混淆 opp.js
       - name: Generate and obfuscate opp.js
         run: |
-          node -e '
+          node -e "
           const fs = require("fs");
           const path = require("path");
           const JavaScriptObfuscator = require("javascript-obfuscator");
@@ -78,7 +78,7 @@ jobs:
 
           fs.writeFileSync(outputFile, finalCode, "utf8");
           console.log(`Obfuscated file written to ${outputFile}`);
-          '
+          "
 
       # 5. Commit 并 push opp.js
       - name: Commit and push opp.js
