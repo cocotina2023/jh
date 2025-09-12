@@ -1,81 +1,94 @@
-name: Generate and Obfuscate Worker Script
+name: Generate and Obfuscate Worker Script (Single File)
 
 on:
-  workflow_dispatch:  # 手动触发
+  # 僅保留手動觸發
+  workflow_dispatch:
 
 jobs:
   build-and-obfuscate:
     runs-on: ubuntu-latest
+    
+    # 關鍵：授予 workflow 推送代碼的權限，否則 git push 會失敗
+    permissions:
+      contents: write
+
+    # 定義環境變量，方便在多個步驟中複用文件名
+    env:
+      OBFUSCATED_FILE_PATH: dist/worker.js
 
     steps:
-      # 1. Checkout 仓库
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. 设置 Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      # 3. 安装 javascript-obfuscator
       - name: Install JavaScript Obfuscator
+        # 直接安裝依賴，而不是通過 package.json
         run: npm install javascript-obfuscator
 
-      # 4. 生成并混淆 opp.js（改为写入临时脚本执行，避免 node -e 多行报错）
-      - name: Generate and obfuscate opp.js
+      - name: Generate and Obfuscate Script
+        env:
+          # 引用倉庫的 Secret
+          SOURCE_CODE: ${{ secrets.WORKER_SOURCE_CODE }}
         run: |
-          # 写入临时脚本
-          cat > obfuscate-temp.js <<'EOF'
-          const fs = require("fs");
-          const JavaScriptObfuscator = require("javascript-obfuscator");
+          # 確保輸出目錄存在
+          mkdir -p $(dirname ${{ env.OBFUSCATED_FILE_PATH }})
+          
+          # 將所有 JavaScript 混淆邏輯嵌入到這一步驟中
+          node -e "
+            const JavaScriptObfuscator = require('javascript-obfuscator');
+            const fs = require('fs');
+            const path = require('path');
 
-          const sourceFile = "op.js";
-          if (!fs.existsSync(sourceFile)) {
-            console.error("Error: op.js not found");
-            process.exit(1);
-          }
+            const outputFilePath = '${{ env.OBFUSCATED_FILE_PATH }}';
+            const originalCode = process.env.SOURCE_CODE;
 
-          const originalCode = fs.readFileSync(sourceFile, "utf8");
+            if (!originalCode || originalCode.length < 50) {
+              console.error('错误：來自 Secrets 的源代碼缺失、為空或過短。');
+              process.exit(1);
+            }
 
-          const obfuscationOptions = {
-            compact: true,
-            controlFlowFlattening: true,
-            controlFlowFlatteningThreshold: 0.75,
-            deadCodeInjection: true,
-            deadCodeInjectionThreshold: 0.4,
-            stringArray: true,
-            stringArrayEncoding: ["base64"],
-            stringArrayThreshold: 0.75,
-            renameGlobals: true,
-            identifierNamesGenerator: "mangled",
-            numbersToExpressions: true,
-            splitStrings: true,
-            splitStringsChunkLength: 10,
-            transformObjectKeys: true,
-            selfDefending: false,
-            debugProtection: false,
-            disableConsoleOutput: true,
-            reservedNames: ["^userID$", "^proxyIP$"],
-            seed: Math.floor(Math.random() * 100000)
-          };
+            const obfuscationOptions = {
+                compact: true,
+                controlFlowFlattening: true,
+                controlFlowFlatteningThreshold: 0.75,
+                deadCodeInjection: true,
+                deadCodeInjectionThreshold: 0.4,
+                stringArray: true,
+                stringArrayEncoding: ['base64'],
+                stringArrayThreshold: 0.75,
+                renameGlobals: true,
+                identifierNamesGenerator: 'mangled',
+                numbersToExpressions: true,
+                splitStrings: true,
+                splitStringsChunkLength: 10,
+                transformObjectKeys: true,
+                selfDefending: false,
+                debugProtection: false
+            };
 
-          const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
-          fs.writeFileSync("opp.js", obfuscatedCode, "utf8");
-          console.log("OBFUSCATION_SUCCESS: wrote opp.js");
-          EOF
+            console.log('正在混淆代碼...');
+            const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
+            console.log('代碼混淆完成。');
 
-          # 执行临时脚本
-          node obfuscate-temp.js
+            fs.writeFileSync(outputFilePath, obfuscatedCode, 'utf8');
+            console.log(\`混淆後的文件已保存到: \${outputFilePath}\`);
+          "
 
-      # 5. Commit 并 push opp.js
-      - name: Commit and push opp.js
+      - name: Commit and push the obfuscated file
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add opp.js
+          
+          git add ${{ env.OBFUSCATED_FILE_PATH }}
+          
+          # 檢查是否有文件變動，如果沒有變動則不執行提交
           if git diff --staged --quiet; then
-            echo "No changes to commit, opp.js is up-to-date."
+            echo "No changes to commit, the obfuscated file is already up-to-date."
           else
-            git commit -m "build: Update obfuscated opp.js"
+            git commit -m "build: Generate and obfuscate worker script"
             git push
+          fi
