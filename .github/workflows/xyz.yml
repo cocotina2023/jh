@@ -37,7 +37,7 @@ jobs:
           const sourceFile = 'op.js';
           const outputFile = 'dist/opp.js';
 
-          // --- 💡 核心邏輯修正 ---
+          // --- 核心邏輯：保留已存在的 Header ---
           // 1. 定義一個預設的 header，用於首次生成檔案。
           let header = `let userID = "PLEASE-CHANGE-ME-IN-THE-GENERATED-FILE";\nconst proxyIPs = [""];`;
 
@@ -47,11 +47,9 @@ jobs:
               const existingContent = fs.readFileSync(outputFile, 'utf8');
               
               // 3. 透過尋找混淆程式碼的起始特徵來安全地分離 header。
-              // 混淆後的程式碼通常以 (function(... 或 const _0x... 開頭。
               const obfuscatedCodeStartIndex = existingContent.search(/\(function\(|const _0x/);
 
               if (obfuscatedCodeStartIndex > 0) {
-                  // 如果找到了混淆程式碼的開頭，那麼它之前的所有內容都被視為 header。
                   header = existingContent.substring(0, obfuscatedCodeStartIndex).trim();
                   console.log('✅ 成功從現有檔案中保留了 header。');
               } else {
@@ -60,7 +58,7 @@ jobs:
           } else {
               console.log(`${outputFile} 不存在，將為首次運行生成預設 header。`);
           }
-          // --- 核心邏輯修正結束 ---
+          // --- 核心邏輯結束 ---
           
           if (!fs.existsSync(sourceFile)) {
             console.error(`❌ 錯誤: 來源檔案 ${sourceFile} 不存在!`);
@@ -69,36 +67,36 @@ jobs:
 
           const originalCode = fs.readFileSync(sourceFile, 'utf8');
 
+          // ✨ 調整後的混淆選項 ✨
+          // 更改這些選項會產生不同風格、但功能相同的混淆程式碼
           const obfuscationOptions = {
             compact: true,
             controlFlowFlattening: true,
-            controlFlowFlatteningThreshold: 1,
+            controlFlowFlatteningThreshold: 1, // 提高強度
             deadCodeInjection: true,
-            deadCodeInjectionThreshold: 1,
+            deadCodeInjectionThreshold: 1, // 提高強度
             stringArray: true,
-            stringArrayEncoding: ['base64'],
+            stringArrayEncoding: ['rc4'], // 使用更強的編碼
             stringArrayThreshold: 1,
             renameGlobals: true,
-            identifierNamesGenerator: 'hexadecimal',
+            identifierNamesGenerator: 'hexadecimal', // 更改變數名生成方式，這是改變 `eN=d` 樣式的關鍵
             numbersToExpressions: true,
             splitStrings: true,
-            splitStringsChunkLength: 25,
+            splitStringsChunkLength: 20, // 調整字串分割長度
             transformObjectKeys: true,
-            selfDefending: false,
+            selfDefending: false, 
             debugProtection: false
           };
 
           const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
 
-          // 將保留的 (或預設的) header 與新混淆的程式碼拼接起來
           const finalCode = header + '\n' + obfuscatedCode;
 
           fs.writeFileSync(outputFile, finalCode, 'utf8');
           console.log(`✅ 成功生成 ${outputFile}。`);
           NODE
 
-      # 步驟 4: 提交並推送變更 (優化後的方法)
-      # 這裡使用了一個專門的 Action，比手動執行 git 指令更簡潔、更可靠。
+      # 使用標準的 Action 來提交變更，更可靠
       - name: Commit and push dist/opp.js
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
