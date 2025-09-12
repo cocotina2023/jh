@@ -1,7 +1,7 @@
 name: Generate and Obfuscate Worker Script
 
 on:
-  workflow_dispatch:  # 仅手动触发
+  workflow_dispatch:
 
 jobs:
   build-and-obfuscate:
@@ -10,95 +10,77 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        # persist-credentials: true # 默认 true，如有特殊需要可显式设置
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      - name: Install Obfuscator
+      - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      - name: Write obfuscation script to runner and run it
+      - name: Generate and backup opp.js
         run: |
-          cat > obfuscate-temp.js <<'NODE'
-          #!/usr/bin/env node
-          const JavaScriptObfuscator = require('javascript-obfuscator');
+          node -e "
           const fs = require('fs');
           const path = require('path');
+          const JavaScriptObfuscator = require('javascript-obfuscator');
 
-          try {
-            // 从仓库根目录读取 op.js（不使用 secrets）
-            const sourcePath = path.resolve(process.cwd(), 'op.js');
-            if (!fs.existsSync(sourcePath)) {
-              console.error('Error: op.js not found at', sourcePath);
-              process.exit(1);
-            }
-
-            const originalCode = fs.readFileSync(sourcePath, 'utf8');
-            if (!originalCode || originalCode.length < 5) {
-              console.error('Error: op.js is missing or too short.');
-              process.exit(1);
-            }
-
-            // --- 混淆配置 ---
-            const obfuscationOptions = {
-                compact: true,
-                controlFlowFlattening: true,
-                controlFlowFlatteningThreshold: 0.75,
-                deadCodeInjection: true,
-                deadCodeInjectionThreshold: 0.4,
-                stringArray: true,
-                stringArrayEncoding: ['base64'],
-                stringArrayThreshold: 0.75,
-                renameGlobals: true,
-                identifierNamesGenerator: 'mangled',
-                numbersToExpressions: true,
-                splitStrings: true,
-                splitStringsChunkLength: 10,
-                transformObjectKeys: true,
-                selfDefending: false,
-                debugProtection: false,
-                disableConsoleOutput: true,
-                // 精确保留 userID 和 proxyIP 两个标识符（用正则）
-                reservedNames: ['^userID$', '^proxyIP$']
-            };
-
-            const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode(true);
-
-            const outDir = path.join(process.cwd(), 'dist');
-            if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-
-            const outFile = path.join(outDir, 'opfsa');
-            fs.writeFileSync(outFile, obfuscatedCode, 'utf8');
-
-            console.log('OBFUSCATION_SUCCESS: wrote', outFile);
-            process.exit(0);
-          } catch (err) {
-            console.error('Obfuscation failed:', err && err.stack ? err.stack : String(err));
-            process.exit(2);
+          const sourceFile = path.resolve('op.js');
+          if (!fs.existsSync(sourceFile)) {
+            console.error('Error: op.js not found');
+            process.exit(1);
           }
-          NODE
-          chmod +x obfuscate-temp.js
-          node obfuscate-temp.js
 
-      - name: Upload obfuscated artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: obfuscated-opfsa
-          path: dist/opfsa
+          const originalCode = fs.readFileSync(sourceFile, 'utf8');
+          if (!originalCode || originalCode.length < 5) {
+            console.error('Error: op.js is empty or too short');
+            process.exit(1);
+          }
 
-      # 如果你确实需要把文件提交回仓库（一般不推荐），以下步骤可启用。
-      # 注意：推送可能会因为分支保护或权限设置被拒绝。
-      # - name: Commit and push the obfuscated file (NOT RECOMMENDED)
-      #   run: |
-      #     git config --global user.name 'GitHub Actions Bot'
-      #     git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-      #     git add dist/opfsa
-      #     if git diff --staged --quiet; then
-      #       echo "No changes to commit, the obfuscated file is already up-to-date."
-      #     else
-      #       git commit -m "build: Generate and obfuscate worker script"
-      #       git push
-      #     fi
+          // 输出文件
+          const outFile = path.resolve('opp.js');
+          // 备份旧版本
+          if (fs.existsSync(outFile)) {
+            fs.copyFileSync(outFile, outFile + '.bak');
+            console.log('Backed up existing opp.js to opp.js.bak');
+          }
+
+          const obfuscationOptions = {
+            compact: true,
+            controlFlowFlattening: true,
+            controlFlowFlatteningThreshold: 0.75,
+            deadCodeInjection: true,
+            deadCodeInjectionThreshold: 0.4,
+            stringArray: true,
+            stringArrayEncoding: ['base64'],
+            stringArrayThreshold: 0.75,
+            renameGlobals: true,
+            identifierNamesGenerator: 'mangled',
+            numbersToExpressions: true,
+            splitStrings: true,
+            splitStringsChunkLength: 10,
+            transformObjectKeys: true,
+            selfDefending: false,
+            debugProtection: false,
+            disableConsoleOutput: true,
+            reservedNames: ['^userID$', '^proxyIP$']
+          };
+
+          const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode(true);
+          fs.writeFileSync(outFile, obfuscatedCode, 'utf8');
+          console.log('OBFUSCATION_SUCCESS: wrote', outFile);
+          "
+
+      - name: Commit and push opp.js if changed
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add opp.js
+          # 如果有变化则 commit
+          if git diff --cached --quiet; then
+            echo "No changes in opp.js, skipping commit."
+          else
+            git commit -m "build: Update obfuscated opp.js"
+            git push
+          fi
