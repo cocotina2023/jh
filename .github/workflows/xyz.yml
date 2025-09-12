@@ -54,7 +54,7 @@ jobs:
             splitStringsChunkLength: 10,
             transformObjectKeys: true,
             selfDefending: false,
-            debugProtection: false
+            debugProtection: false,
           };
 
           const obfuscatedCode = JavaScriptObfuscator
