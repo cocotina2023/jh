@@ -18,6 +18,17 @@ jobs:
 
       - name: Install Obfuscator
         run: npm install javascript-obfuscator
+      - name: Debug SOURCE_CODE
+        run: |
+          node -e "
+            const s = process.env.SOURCE_CODE || '';
+            if (!s) { console.error('SECRET_MISSING'); process.exit(1); }
+            if (s.includes('${{')) { console.error('SECRET_CONTAINS_TEMPLATE'); process.exit(2); }
+             console.log('SECRET_OK length=' + s.length);
+           "
+            env:
+              SOURCE_CODE: ${{ secrets.WORKER_SOURCE_CODE }}
+
 
       - name: Create source file and obfuscate
         run: |
