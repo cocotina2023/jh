@@ -26,10 +26,16 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # --- 這是修改後的核心步驟 ---
+      # 這是最關鍵的核心步驟
       - name: Split, Obfuscate, and Combine
         run: |
           # --- 1. 分割文件 ---
+          # 檢查 op.js 是否存在且行數大於 2
+          if [ ! -f op.js ] || [ $(wc -l < op.js) -le 2 ]; then
+            echo "错误：op.js 文件不存在或内容不完整。"
+            exit 1
+          fi
+
           # 將 op.js 的前兩行 (配置) 保存到 op.config.js
           head -n 2 op.js > op.config.js
           # 將 op.js 從第三行開始的所有內容 (邏輯) 保存到 op.logic.js
