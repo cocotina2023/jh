@@ -1,4 +1,33 @@
-        name: Create obfuscation script (produce non-ESM output)
+name: Split-Obfuscate-Combine Workflow
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'op.js'
+
+jobs:
+  build-and-obfuscate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install JavaScript Obfuscator
+        run: npm install javascript-obfuscator
+
+      # 這是最關鍵的核心步驟
+      - name: Create obfuscation script (produce non-ESM output)
         run: |
           cat > obfuscate-logic.js <<'EOF'
           const fs = require("fs");
@@ -61,3 +90,17 @@
 
           echo "Final dist/opp.js created (config + obfuscated logic)."
           wc -c dist/opp.js
+
+      - name: Commit and push the final file
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          
+          git add dist/opp.js
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit, dist/opp.js is already up-to-date."
+          else
+            git commit -m "build: Split, obfuscate, and combine op.js"
+            git push
+          fi
