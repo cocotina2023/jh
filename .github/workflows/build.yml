@@ -7,33 +7,22 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # 允許 push 回 repo
+      contents: write
 
     steps:
-      # 1. Checkout repo
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # 2. Setup Node.js
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      # 3. Install obfuscator
-      - name: Install JavaScript Obfuscator
-        run: npm install -g javascript-obfuscator
+      - run: npm install -g javascript-obfuscator
 
-      # 4. Build opp.js (keep header, overwrite root opp.js)
       - name: Obfuscate op.js
         run: |
-          # 提取 header（前两行保留原样）
           head -n 2 op.js > header.js
-
-          # 其余部分
           tail -n +3 op.js > body.js
 
-          # 混淆 body
           javascript-obfuscator body.js \
             --output body.tmp.js \
             --compact true \
@@ -54,36 +43,24 @@ jobs:
             --debug-protection false \
             --disable-console-output true
 
-          # 手动加 IIFE 包裹
           echo "(function(){" > body.obf.js
           cat body.tmp.js >> body.obf.js
           echo "})();" >> body.obf.js
 
-          # 合并 header + 混淆 body → 覆盖根目录 opp.js
           cat header.js body.obf.js > opp.js
 
-          # 🔥 清理掉所有 // <!-- ... --> 的注释行
+          # 清理 GAMFC 注释
           sed -i '/^\/\/ *<!--.*-->.*$/d' opp.js
 
-          echo "✅ Generated opp.js at project root (no GAMFC header)"
-
-      # 5. Commit 回 repo（只提交 opp.js，不提交 op.js）
-      - name: Commit and push opp.js
+      - name: Commit opp.js
         run: |
           echo "op.js" >> .gitignore
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add .gitignore opp.js
           if git diff --staged --quiet; then
-            echo "No changes to commit"
+            echo "No changes"
           else
-            git commit -m 'build: generate obfuscated opp.js'
+            git commit -m 'build: generate opp.js'
             git push
           fi
-
-      # 6. 打印生成文件前 10 行，方便检查
-      - name: Preview opp.js
-        run: |
-          echo "===== Preview opp.js (first 10 lines) ====="
-          head -n 10 opp.js
-          echo "=========================================="
