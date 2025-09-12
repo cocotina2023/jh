@@ -1,4 +1,4 @@
-name: Obfuscate op.js (generate dist/opp.js with globalThis header + validation)
+name: Obfuscate op.js (global install + NODE_PATH)
 
 on:
   workflow_dispatch:
@@ -18,14 +18,25 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install JavaScript Obfuscator
+      # ---- 全域安裝 obfuscator（方案 B） ----
+      - name: Install JavaScript Obfuscator globally
         run: npm install -g javascript-obfuscator
 
+      # 把全域安裝路徑加入 NODE_PATH，讓 require() 能找到全域模組
+      - name: Set NODE_PATH for global modules
+        run: |
+          echo "NODE_PATH=$(npm root -g)" >> $GITHUB_ENV
+          echo "NODE_PATH is set to: $(npm root -g)"
+
       - name: Generate & obfuscate op.js -> dist/opp.js
+        env:
+          # 確保 node process 可以看到 NODE_PATH（已經透過 GITHUB_ENV 設定）
+          NODE_PATH: ${{ env.NODE_PATH }}
         run: |
           node <<'NODE'
           const fs = require('fs');
           const path = require('path');
+          // 這裡使用 require('javascript-obfuscator')，透過上面的 NODE_PATH 指定全域模組路徑
           const JavaScriptObfuscator = require('javascript-obfuscator');
 
           const src = path.resolve('op.js');
@@ -40,7 +51,7 @@ jobs:
 
           const originalCode = fs.readFileSync(src, 'utf8');
 
-          // Obfuscator options - NOTE renameGlobals disabled to avoid mangling global names
+          // Obfuscator options - renameGlobals disabled to avoid mangling global names
           const options = {
             compact: true,
             controlFlowFlattening: true,
@@ -79,8 +90,8 @@ jobs:
           fs.writeFileSync(out, final, 'utf8');
           console.log('✅ dist/opp.js generated at', out);
           // print preview
-          console.log('----- preview (first 12 lines) -----');
-          console.log(final.split(/\\r?\\n/).slice(0,12).join('\\n'));
+          console.log('----- preview (first 20 lines) -----');
+          console.log(final.split(/\\r?\\n/).slice(0,20).join('\\n'));
           console.log('------------------------------------');
           NODE
 
