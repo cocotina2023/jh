@@ -73,7 +73,10 @@ jobs:
           }
 
           // 构建规范 header（保证双引号并 escape 内部双引号）
-          const headerText = `let userID = "${String(userVal).replace(/"/g,'\\"')}";\nconst proxyIPs = [${proxyArray.map(x => `"${String(x).replace(/"/g,'\\"')}"`).join(', ')}]`;
+          const headerText =
+            `let userID = "${String(userVal).replace(/"/g,'\\"')}";\n` +
+            `const proxyIPs = [${proxyArray.map(x => `"${String(x).replace(/"/g,'\\"')}"`).join(', ')}];`;
+
 
           // 从 body 中删除第一次出现的 header（避免重复）
           let body = src;
