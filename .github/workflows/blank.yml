@@ -1,4 +1,4 @@
-name: Generate and Obfuscate Worker Script
+name: blank.yml
 
 on:
   workflow_dispatch:  # 只保留手动触发
