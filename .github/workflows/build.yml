@@ -1,3 +1,30 @@
+name: Obfuscate op.js
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # 允許 push 回 repo
+
+    steps:
+      # 1. Checkout repo
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      # 3. Install obfuscator
+      - name: Install JavaScript Obfuscator
+        run: npm install -g javascript-obfuscator
+
+      # 4. Build opp.js (keep header, overwrite root opp.js)
       - name: Obfuscate op.js
         run: |
           # 提取 header（前两行保留原样）
@@ -39,3 +66,17 @@
           cat header.js body.obf.js > opp.js
 
           echo "✅ Generated opp.js at project root (clean, no injected comments)"
+
+      # 5. Commit 回 repo（只提交 opp.js，不提交 op.js）
+      - name: Commit and push opp.js
+        run: |
+          echo "op.js" >> .gitignore
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add .gitignore opp.js
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m 'build: generate obfuscated opp.js'
+            git push
+          fi
