@@ -68,9 +68,11 @@ jobs:
           const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
 
           const header = `// version base on commit 43fad05dcdae3b723c53c226f8181fc5bd47223e
-// @ts-ignore
-let userID = "86c50e3a-5b87-49dd-bd20-03c7f2735e40";
-const proxyIPs = [""];
+      - name: My Script Step
+        run: | 
+          let userID = "86c50e3a-5b87-49dd-bd20-03c7f2735e40";
+           const proxyIPs = [""];
+           echo "Script ran successfully with userID: $userID"
 
           const finalCode = header + "\n\n" + obfuscatedCode;
 
