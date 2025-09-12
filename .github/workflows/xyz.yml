@@ -1,4 +1,5 @@
-name: Obfuscate op.js from Repository
+
+name: Obfuscate op.js -> dist/opp.js (preserve header, commit result)
 
 on:
   workflow_dispatch:
@@ -10,22 +11,16 @@ jobs:
       contents: write
 
     steps:
-      # 1. Checkout 仓库
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. 设置 Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      # 3. 安装混淆工具
       - name: Install JavaScript Obfuscator
-        run: npm install javascript-obfuscator
-
-      # 4. 生成并混淆 op.js
-      - name: Generate and obfuscate op.js
+        run: npm install javascript-obfuscator- name: Generate and obfuscate op.js
         run: |
           node <<'NODE'
           const fs = require('fs');
@@ -33,14 +28,12 @@ jobs:
           const JavaScriptObfuscator = require('javascript-obfuscator');
 
           const sourceFile = 'op.js';
-          const outputDir = 'dist';
-          const outputFile = path.join(outputDir, 'opp.js');
+          const outputFile = 'opp.js';
 
           if (!fs.existsSync(sourceFile)) {
             console.error(`Error: ${sourceFile} not found!`);
             process.exit(1);
           }
-          if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
 
           const originalCode = fs.readFileSync(sourceFile, 'utf8');
 
@@ -63,17 +56,20 @@ jobs:
             debugProtection: false
           };
 
+          // 混淆核心代码
           const obfuscatedCode = JavaScriptObfuscator
             .obfuscate(originalCode, obfuscationOptions)
             .getObfuscatedCode();
 
+          // 明文 header，永远不会被混淆
           const header = `let userID = "a1b2c3d4-e5f6-7890-1234-567890abcdef";
           const proxyIPs = [""];`;
 
+          // 拼接：先 header，再混淆代码
           const finalCode = header + '\n' + obfuscatedCode;
 
           fs.writeFileSync(outputFile, finalCode, 'utf8');
-          console.log(`Generated template file at ${outputFile}`);
+          console.log("✅ Generated opp.js with editable UUID at top");
           NODE
 
       # 5. Commit 并 push opp.js
