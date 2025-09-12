@@ -1,4 +1,4 @@
-      - name: Create obfuscation script (produce non-ESM output)
+        name: Create obfuscation script (produce non-ESM output)
         run: |
           cat > obfuscate-logic.js <<'EOF'
           const fs = require("fs");
