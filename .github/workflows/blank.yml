@@ -34,44 +34,44 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # 4. 生成並混淆為 opp.js (添加了 reservedNames 選項)
+      # 4. 生成並混淆為 opp.js (不修改 op.js 的版本)
       - name: Generate and obfuscate to opp.js
         run: |
-          # 步驟 4.1: 將混淆邏輯寫入一個臨時的 JS 腳本文件
+          # 步驟 4.1: 創建一個 op.js 的臨時副本，並在末尾追加“使用”代碼
+          TEMP_SOURCE_FILE="op-temp.js"
+          cp op.js $TEMP_SOURCE_FILE
+          # 追加一行無害的 IIFE (立即執行函數) 來引用變數，防止被當作無用代碼刪除
+          # 這不會影響原始代碼的執行邏輯
+          echo -e "\n;(()=>{return {userID, proxyIPs}})();" >> $TEMP_SOURCE_FILE
+
+          # 步驟 4.2: 將混淆邏輯寫入一個臨時的 JS 腳本文件
           cat > obfuscate-temp.js <<'EOF'
           const fs = require("fs");
           const path = require("path");
           const JavaScriptObfuscator = require("javascript-obfuscator");
 
-          const sourceFile = "op.js";
+          // 修改這裡：讀取我們剛剛創建的臨時文件，而不是 op.js
+          const sourceFile = "op-temp.js";
+          
           const outputDir = "dist";
           const outputFile = path.join(outputDir, "opp.js");
 
-          // 檢查源文件是否存在
           if (!fs.existsSync(sourceFile)) {
-            console.error(`错误：源文件 ${sourceFile} 未找到！`);
+            console.error(`错误：臨時源文件 ${sourceFile} 未找到！`);
             process.exit(1);
           }
           
-          // 確保輸出目錄存在
           if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir);
           }
 
           const originalCode = fs.readFileSync(sourceFile, "utf8");
 
-          // --- 混淆配置 (這是確保能被 Cloudflare 識別，並保留指定變數的關鍵) ---
+          // --- 混淆配置 (保持不變) ---
           const obfuscationOptions = {
-              // 保持 ES Module 結構，以便 Cloudflare 識別
               esModule: true,
-              
-              // 啟用全局變數名混淆
               renameGlobals: true,
-              
-              // 新增：告訴混淆器不要重命名這些變數
               reservedNames: ['userID', 'proxyIPs'],
-
-              // --- 其他保持不變的混淆選項 ---
               compact: true,
               controlFlowFlattening: true,
               controlFlowFlatteningThreshold: 0.75,
@@ -97,7 +97,7 @@ jobs:
           console.log(`混淆後的文件已保存到: ${outputFile}`);
           EOF
 
-          # 步驟 4.2: 執行剛剛創建的臨時腳本
+          # 步驟 4.3: 執行混淆腳本
           node obfuscate-temp.js
 
       # 5. 將生成的 dist/opp.js 文件提交並推送到倉庫
