@@ -22,47 +22,47 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # 4. 生成并混淆 opp.js
+      # 4. 生成并混淆 opp.js（安全版）
       - name: Generate and obfuscate opp.js
         run: |
           cat > obfuscate.js <<'EOF'
-          const fs = require("fs");
-          const JavaScriptObfuscator = require("javascript-obfuscator");
+const fs = require("fs");
+const JavaScriptObfuscator = require("javascript-obfuscator");
 
-          const sourceFile = "op.js";
-          if (!fs.existsSync(sourceFile)) {
-            console.error("Error: op.js not found");
-            process.exit(1);
-          }
+const sourceFile = "op.js";
+if (!fs.existsSync(sourceFile)) {
+  console.error("Error: op.js not found");
+  process.exit(1);
+}
 
-          const originalCode = fs.readFileSync(sourceFile, "utf8");
+const originalCode = fs.readFileSync(sourceFile, "utf8");
 
-          const obfuscationOptions = {
-            compact: true,
-            controlFlowFlattening: true,
-            controlFlowFlatteningThreshold: 0.75,
-            deadCodeInjection: true,
-            deadCodeInjectionThreshold: 0.4,
-            stringArray: true,
-            stringArrayEncoding: ["base64"],
-            stringArrayThreshold: 0.75,
-            renameGlobals: true,
-            identifierNamesGenerator: "mangled",
-            numbersToExpressions: true,
-            splitStrings: true,
-            splitStringsChunkLength: 10,
-            transformObjectKeys: true,
-            selfDefending: false,
-            debugProtection: false,
-            disableConsoleOutput: true,
-            reservedNames: ["^userID$", "^proxyIP$"],
-            seed: Math.floor(Math.random() * 100000)
-          };
+const obfuscationOptions = {
+  compact: true,
+  controlFlowFlattening: true,
+  controlFlowFlatteningThreshold: 0.75,
+  deadCodeInjection: true,
+  deadCodeInjectionThreshold: 0.4,
+  stringArray: true,
+  stringArrayEncoding: ["base64"],
+  stringArrayThreshold: 0.75,
+  renameGlobals: true,
+  identifierNamesGenerator: "mangled",
+  numbersToExpressions: true,
+  splitStrings: true,
+  splitStringsChunkLength: 10,
+  transformObjectKeys: true,
+  selfDefending: false,
+  debugProtection: false,
+  disableConsoleOutput: true,
+  reservedNames: ["^userID$", "^proxyIP$"],
+  seed: Math.floor(Math.random() * 100000)
+};
 
-          const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
-          fs.writeFileSync("opp.js", obfuscatedCode, "utf8");
-          console.log("OBFUSCATION_SUCCESS: wrote opp.js");
-          EOF
+const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
+fs.writeFileSync("opp.js", obfuscatedCode, "utf8");
+console.log("OBFUSCATION_SUCCESS: wrote opp.js");
+EOF
 
           node obfuscate.js
 
