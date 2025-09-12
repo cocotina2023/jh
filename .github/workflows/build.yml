@@ -1,4 +1,4 @@
-name: Obfuscate op.js
+name: Obfuscate op.js (produce opp.js at repo root & preview)
 
 on:
   workflow_dispatch:
@@ -10,70 +10,108 @@ jobs:
       contents: write
 
     steps:
-      # 1. 拉取仓库
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. 安装 Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      # 3. 安装混淆器
       - name: Install JavaScript Obfuscator
-        run: npm install -g javascript-obfuscator
+        run: npm install javascript-obfuscator
 
-      # 4. 混淆 body，保留 header
-      - name: Obfuscate code
+      - name: Build opp.js (robust header extraction, obfuscate body)
         run: |
-          # 分离前两行 header
-          head -n 2 op.js > header.js
-          tail -n +3 op.js > body.js
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const JavaScriptObfuscator = require('javascript-obfuscator');
 
-          # 混淆 body
-          javascript-obfuscator body.js \
-            --output body.tmp.js \
-            --compact true \
-            --control-flow-flattening true \
-            --control-flow-flattening-threshold 0.75 \
-            --dead-code-injection true \
-            --dead-code-injection-threshold 0.4 \
-            --string-array true \
-            --string-array-encoding base64 \
-            --string-array-threshold 0.75 \
-            --rename-globals true \
-            --identifier-names-generator mangled \
-            --numbers-to-expressions true \
-            --split-strings true \
-            --split-strings-chunk-length 10 \
-            --transform-object-keys true \
-            --self-defending false \
-            --debug-protection false \
-            --disable-console-output true
+          const srcPath = path.resolve('op.js');
+          if (!fs.existsSync(srcPath)) {
+            console.error('❌ op.js not found in repo root');
+            process.exit(1);
+          }
 
-          # 包裹成 IIFE
-          echo "(function(){" > body.obf.js
-          cat body.tmp.js >> body.obf.js
-          echo "})();" >> body.obf.js
+          const src = fs.readFileSync(srcPath, 'utf8');
 
-          # 合并 header + 混淆后的 body → opp.js
-          cat header.js body.obf.js > opp.js
+          // 匹配 header: let userID = "..." ; const proxyIPs = [ ... ];
+          const headerRegex = /let\s+userID\s*=\s*"([^"]+)";\s*[\r\n]+const\s+proxyIPs\s*=\s*\[[^\]]*\]\s*;?/i;
+          const headerMatch = src.match(headerRegex);
+          if (!headerMatch) {
+            console.error('❌ header not found. Ensure op.js contains:');
+            console.error('   let userID = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";');
+            console.error('   const proxyIPs = [""];');
+            process.exit(1);
+          }
 
-          echo "✅ opp.js generated at project root"
-          echo "----- PREVIEW -----"
-          head -n 5 opp.js
-          echo "-------------------"
+          const headerText = headerMatch[0].trim();
+          const uuidCandidate = headerMatch[1].trim();
 
-      # 5. 提交结果回仓库
-      - name: Commit and push opp.js
+          // Optional UUID check (warn only)
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (!uuidRegex.test(uuidCandidate)) {
+            console.warn('⚠️ header UUID format looks unusual:', uuidCandidate);
+          } else {
+            console.log('✅ Header UUID looks valid:', uuidCandidate);
+          }
+
+          // body is source minus first matched header occurrence
+          const body = src.replace(headerMatch[0], '');
+
+          // obfuscate body
+          const obf = JavaScriptObfuscator.obfuscate(body, {
+            compact: true,
+            controlFlowFlattening: true,
+            controlFlowFlatteningThreshold: 0.75,
+            deadCodeInjection: true,
+            deadCodeInjectionThreshold: 0.4,
+            stringArray: true,
+            stringArrayEncoding: ['base64'],
+            stringArrayThreshold: 0.75,
+            renameGlobals: true,
+            identifierNamesGenerator: 'mangled',
+            numbersToExpressions: true,
+            splitStrings: true,
+            splitStringsChunkLength: 10,
+            transformObjectKeys: true,
+            selfDefending: false,
+            debugProtection: false,
+            disableConsoleOutput: true
+          }).getObfuscatedCode();
+
+          // assemble final with header + IIFE
+          let final = headerText + '\n\n(function(){\n' + obf + '\n})();\n';
+
+          // remove any injected <!--...--> comment lines
+          final = final.replace(/^\/\/ *<!--.*-->.*$/gm, '');
+          final = final.replace(/^\s*<!--.*-->.*$/gm, '');
+
+          const outPath = path.resolve('opp.js');
+          fs.writeFileSync(outPath, final, 'utf8');
+
+          console.log('✅ opp.js generated at repo root');
+          console.log('----- opp.js preview (first 20 lines) -----');
+          console.log(final.split(/\\r?\\n/).slice(0,20).join('\\n'));
+          console.log('-------------------------------------------');
+          NODE
+
+      - name: Ensure op.js ignored and commit opp.js
         run: |
+          # add op.js to .gitignore to avoid leaking source
+          touch .gitignore
+          if ! grep -qx 'op.js' .gitignore; then
+            echo 'op.js' >> .gitignore
+            echo 'Added op.js to .gitignore'
+          fi
+
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add opp.js
+          git add .gitignore opp.js
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "build: generate obfuscated opp.js"
+            git commit -m 'build: generate obfuscated opp.js'
             git push
           fi
