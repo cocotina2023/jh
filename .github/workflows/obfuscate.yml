@@ -1,28 +1,24 @@
 name: Generate and Obfuscate Worker Script
 
 on:
-  workflow_dispatch:  # 仅手动触发
+  workflow_dispatch:
 
 jobs:
   build-and-obfuscate:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout 仓库
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. 设置 Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      # 3. 安装 javascript-obfuscator
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # 4. 生成并混淆 opp.js（安全版）
       - name: Generate and obfuscate opp.js
         run: |
           cat > obfuscate.js <<'EOF'
@@ -66,7 +62,6 @@ EOF
 
           node obfuscate.js
 
-      # 5. Commit 并 push opp.js
       - name: Commit and push opp.js
         run: |
           git config --global user.name 'GitHub Actions Bot'
