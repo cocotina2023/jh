@@ -48,7 +48,8 @@ jobs:
                 splitStringsChunkLength: 10,
                 transformObjectKeys: true,
                 selfDefending: false,
-                debugProtection: false
+                debugProtection: false,
+                reservedNames: ['userID', 'proxyIP'],
             };
 
             const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
