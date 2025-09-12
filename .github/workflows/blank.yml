@@ -1,49 +1,51 @@
 name: Obfuscate op.js from Repository
 
 on:
-  workflow_dispatch:  # 仅手动触发
+  workflow_dispatch:  # 允許手動觸發
 
 jobs:
   build-and-obfuscate:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # 允许 workflow push 回仓库
+      contents: write  # 允許 workflow push 回倉庫
 
     steps:
-      # 1. Checkout 仓库
+      # 1. Checkout 倉庫
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. 设置 Node.js
+      # 2. 設定 Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      # 3. 安装混淆工具
+      # 3. 安裝混淆工具
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # 4. 直接用 node -e 混淆 opp.js
-      - name: Generate and obfuscate opp.js
+      # 4. 產生並混淆 JS 檔案
+      - name: Generate and obfuscate op.js
         run: |
           node -e "
-          const fs = require("fs");
-          const path = require("path");
-          const JavaScriptObfuscator = require("javascript-obfuscator");
+          const fs = require('fs');
+          const path = require('path');
+          const JavaScriptObfuscator = require('javascript-obfuscator');
 
-          const sourceFile = "op.js";
-          const outputDir = "dist";
-          const outputFile = path.join(outputDir, "opp.js");
+          const sourceFile = 'op.js';
+          const outputDir = 'dist';
+          const outputFile = path.join(outputDir, 'opp.js');
 
           if (!fs.existsSync(sourceFile)) {
-            console.error(`Error: ${sourceFile} not found!`);
+            console.error(\`Error: \${sourceFile} not found!\`);
             process.exit(1);
           }
 
-          if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
+          if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir);
+          }
 
-          const originalCode = fs.readFileSync(sourceFile, "utf8");
+          const originalCode = fs.readFileSync(sourceFile, 'utf8');
 
           const obfuscationOptions = {
             esModule: true,
@@ -53,10 +55,10 @@ jobs:
             deadCodeInjection: true,
             deadCodeInjectionThreshold: 0.4,
             stringArray: true,
-            stringArrayEncoding: ["base64"],
+            stringArrayEncoding: ['base64'],
             stringArrayThreshold: 0.75,
             renameGlobals: true,
-            identifierNamesGenerator: "mangled",
+            identifierNamesGenerator: 'mangled',
             numbersToExpressions: true,
             splitStrings: true,
             splitStringsChunkLength: 10,
@@ -67,20 +69,16 @@ jobs:
 
           const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
 
-          const header = `// version base on commit 43fad05dcdae3b723c53c226f8181fc5bd47223e
-      - name: My Script Step
-        run: | 
-          let userID = "86c50e3a-5b87-49dd-bd20-03c7f2735e40";
-           const proxyIPs = [""];
-           echo "Script ran successfully with userID: $userID"
+          // --- 已移除版本註解 ---
+          const header = \`// @ts-ignore\nlet userID = \"86c50e3a-5b87-49dd-bd20-03c7f2735e40\";\nconst proxyIPs = [\"\"];\`;
 
-          const finalCode = header + "\n\n" + obfuscatedCode;
+          const finalCode = header + '\n\n' + obfuscatedCode;
 
-          fs.writeFileSync(outputFile, finalCode, "utf8");
-          console.log(`Obfuscated file written to ${outputFile}`);
+          fs.writeFileSync(outputFile, finalCode, 'utf8');
+          console.log(\`Obfuscated file written to \${outputFile}\`);
           "
 
-      # 5. Commit 并 push opp.js
+      # 5. Commit 並 push opp.js
       - name: Commit and push opp.js
         run: |
           git config --global user.name 'GitHub Actions Bot'
@@ -91,3 +89,4 @@ jobs:
           else
             git commit -m "build: Obfuscate op.js to dist/opp.js"
             git push
+          fi
