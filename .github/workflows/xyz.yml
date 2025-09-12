@@ -32,7 +32,7 @@ jobs:
           const outputFile = 'dist/opp.js';
 
           if (!fs.existsSync(sourceFile)) {
-            console.error(\`Error: \${sourceFile} not found!\`);
+            console.error(`Error: ${sourceFile} not found!`);
             process.exit(1);
           }
 
@@ -54,7 +54,7 @@ jobs:
             splitStringsChunkLength: 10,
             transformObjectKeys: true,
             selfDefending: false,
-            debugProtection: false,
+            debugProtection: false
           };
 
           const obfuscatedCode = JavaScriptObfuscator
