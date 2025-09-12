@@ -66,12 +66,15 @@ jobs:
             debugProtection: false
           };
 
-          const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
+          const obfuscatedCode = JavaScriptObfuscator
+            .obfuscate(originalCode, obfuscationOptions)
+            .getObfuscatedCode();
 
+          // Header（你可手動改 UUID）
           const header = \`let userID = \\"a1b2c3d4-e5f6-7890-1234-567890abcdef\\";\\nconst proxyIPs = [\\"\\"];\`;
 
-          // 保證輸出是 IIFE，不會有 import/export
-          const finalCode = header + '\\n(function(){\\n' + obfuscatedCode + '\\n})();';
+          // 拼接 Header + 混淆代碼
+          const finalCode = header + '\\n' + obfuscatedCode;
 
           fs.writeFileSync(outputFile, finalCode, 'utf8');
           console.log(\`Generated template file at \${outputFile}\`);
@@ -80,7 +83,7 @@ jobs:
       # 5. Commit 並 push opp.js
       - name: Commit and push opp.js
         run: |
-          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add dist/opp.js
           if git diff --staged --quiet; then
