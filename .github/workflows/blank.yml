@@ -1,4 +1,6 @@
-name: Generate Final Worker Script
+# This is the definitive workflow using robust, pattern-based file splitting.
+# It is tailored specifically for your op.js file structure.
+name: Generate Final Worker Script (Robust Version)
 
 on:
   workflow_dispatch:
@@ -26,32 +28,38 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # 核心步驟：精準分割、混淆邏輯、然後合併
+      # Core Step: Split using content patterns, obfuscate logic, then combine.
       - name: Split, Obfuscate, and Combine
         run: |
-          # --- 1. 分割文件 ---
-          # 根據您的最新文件結構，我們將前 7 行作為不可混淆的配置頭部
-          CONFIG_LINE_COUNT=7
+          # --- 1. Split File using `sed` (Robust Method) ---
+          # This method is not dependent on line numbers.
           
-          head -n $CONFIG_LINE_COUNT op.js > op.config.js
-          tail -n +$(($CONFIG_LINE_COUNT + 1)) op.js > op.logic.js
-          echo "File split into config (first $CONFIG_LINE_COUNT lines) and logic parts."
+          # Extract the header: everything BEFORE the line with "export default {"
+          # The sed command prints lines until it finds the pattern, then quits.
+          # We use `sed '$d'` to remove the matching line itself from the header.
+          sed '/^export default {/q' op.js | sed '$d' > op.config.js
 
-          # --- 2. 混淆邏輯部分 ---
-          # 創建一個只混淆 op.logic.js 的臨時腳本
+          # Extract the logic: everything FROM the line with "export default {" to the end.
+          # The sed command finds the pattern and prints from that line to the end of the file.
+          sed -n '/^export default {/,$p' op.js > op.logic.js
+          
+          echo "File split successfully based on 'export default {' pattern."
+
+          # --- 2. Obfuscate the Logic Part ---
           cat > obfuscate-logic.js <<'EOF'
           const fs = require("fs");
           const path = require("path");
           const JavaScriptObfuscator = require("javascript-obfuscator");
 
-          const sourceFile = "op.logic.js";
+          const sourceFile = "op.logic.js"; // Input: logic part only
           const outputDir = "dist";
-          const outputFile = path.join(outputDir, "opp.logic.obfuscated.js");
+          const outputFile = path.join(outputDir, "opp.logic.obfuscated.js"); // Output: obfuscated logic
 
           if (!fs.existsSync(sourceFile)) { process.exit(1); }
           if (!fs.existsSync(outputDir)) { fs.mkdirSync(outputDir); }
           const originalCode = fs.readFileSync(sourceFile, "utf8");
 
+          // Obfuscation options
           const obfuscationOptions = {
               esModule: true,
               compact: true,
@@ -67,10 +75,10 @@ jobs:
           EOF
           node obfuscate-logic.js
 
-          # --- 3. 合併文件 ---
-          # 為了格式美觀，在配置和混淆代碼之間加一個換行
+          # --- 3. Combine Files ---
+          # Add a newline for better formatting after the config
           echo "" >> op.config.js
-          # 將乾淨的配置和混淆後的邏輯合併成最終的 opp.js 文件
+          # Combine the clean config header and the obfuscated logic into the final file
           cat op.config.js dist/opp.logic.obfuscated.js > dist/opp.js
           echo "Final opp.js file created successfully."
 
