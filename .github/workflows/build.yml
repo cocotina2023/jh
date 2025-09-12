@@ -4,90 +4,76 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-obfuscate:
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      # 1. Checkout
-      - uses: actions/checkout@v4
+      # 1. 拉取仓库
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # 2. Setup Node
-      - uses: actions/setup-node@v4
+      # 2. 安装 Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: '18'
 
-      # 3. Install obfuscator
-      - run: npm install javascript-obfuscator
+      # 3. 安装混淆器
+      - name: Install JavaScript Obfuscator
+        run: npm install -g javascript-obfuscator
 
-      # 4. Build opp.js
-      - name: Build opp.js
+      # 4. 混淆 body，保留 header
+      - name: Obfuscate code
         run: |
-          node <<'EOF'
-          const fs = require("fs");
-          const JavaScriptObfuscator = require("javascript-obfuscator");
+          # 分离前两行 header
+          head -n 2 op.js > header.js
+          tail -n +3 op.js > body.js
 
-          const source = fs.readFileSync("op.js", "utf8").split("\n");
+          # 混淆 body
+          javascript-obfuscator body.js \
+            --output body.tmp.js \
+            --compact true \
+            --control-flow-flattening true \
+            --control-flow-flattening-threshold 0.75 \
+            --dead-code-injection true \
+            --dead-code-injection-threshold 0.4 \
+            --string-array true \
+            --string-array-encoding base64 \
+            --string-array-threshold 0.75 \
+            --rename-globals true \
+            --identifier-names-generator mangled \
+            --numbers-to-expressions true \
+            --split-strings true \
+            --split-strings-chunk-length 10 \
+            --transform-object-keys true \
+            --self-defending false \
+            --debug-protection false \
+            --disable-console-output true
 
-          // 保留前两行作为 header
-          const header = source.slice(0, 2).join("\n");
-          const body = source.slice(2).join("\n");
+          # 包裹成 IIFE
+          echo "(function(){" > body.obf.js
+          cat body.tmp.js >> body.obf.js
+          echo "})();" >> body.obf.js
 
-          // 混淆 body
-          const obfuscated = JavaScriptObfuscator.obfuscate(body, {
-            compact: true,
-            controlFlowFlattening: true,
-            controlFlowFlatteningThreshold: 0.75,
-            deadCodeInjection: true,
-            deadCodeInjectionThreshold: 0.4,
-            stringArray: true,
-            stringArrayEncoding: ["base64"],
-            stringArrayThreshold: 0.75,
-            renameGlobals: true,
-            identifierNamesGenerator: "mangled",
-            numbersToExpressions: true,
-            splitStrings: true,
-            splitStringsChunkLength: 10,
-            transformObjectKeys: true,
-            selfDefending: false,
-            debugProtection: false,
-            disableConsoleOutput: true,
-          }).getObfuscatedCode();
+          # 合并 header + 混淆后的 body → opp.js
+          cat header.js body.obf.js > opp.js
 
-          // 合并 header + IIFE
-          let finalCode = `${header}\n\n(function(){\n${obfuscated}\n})();\n`;
+          echo "✅ opp.js generated at project root"
+          echo "----- PREVIEW -----"
+          head -n 5 opp.js
+          echo "-------------------"
 
-          // 清理 GAMFC 注释
-          finalCode = finalCode.replace(/^\/\/ *<!--.*-->.*$/gm, "");
-
-          fs.writeFileSync("opp.js", finalCode, "utf8");
-          console.log("✅ opp.js generated");
-          EOF
-
-      # 5. 检查 header 是否存在
-      - name: Validate header
+      # 5. 提交结果回仓库
+      - name: Commit and push opp.js
         run: |
-          if ! grep -q "let userID" opp.js; then
-            echo "❌ opp.js missing header (let userID ...)"
-            exit 1
-          fi
-          echo "✅ opp.js header OK"
-
-      # 6. Commit opp.js
-      - name: Commit opp.js
-        run: |
-          echo "op.js" >> .gitignore
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add .gitignore opp.js
+          git add opp.js
           if git diff --staged --quiet; then
-            echo "No changes"
+            echo "No changes to commit"
           else
-            git commit -m 'build: generate opp.js'
+            git commit -m "build: generate obfuscated opp.js"
             git push
           fi
-
-      # 7. Preview 前 5 行
-      - name: Preview opp.js
-        run: head -n 5 opp.js
