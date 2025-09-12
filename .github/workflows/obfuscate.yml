@@ -1,18 +1,18 @@
-name: Generate and Obfuscate opp.js
+name: Generate and Obfuscate Worker Script
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'  # 每小时运行一次，可根据需要调整
 
 jobs:
   build-and-obfuscate:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 检出代码，使用 PAT 代替 GITHUB_TOKEN
+      # 1. Checkout 仓库
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.PAT_TOKEN }}
 
       # 2. 设置 Node.js
       - name: Set up Node.js
@@ -24,66 +24,58 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # 4. 混淆生成 opp.js 并备份旧版本
-      - name: Generate and backup opp.js
+      # 4. 生成并混淆 opp.js
+      - name: Create and obfuscate opp.js
         run: |
           node -e "
-          const fs = require('fs');
-          const path = require('path');
-          const JavaScriptObfuscator = require('javascript-obfuscator');
+            const fs = require('fs');
+            const JavaScriptObfuscator = require('javascript-obfuscator');
 
-          const sourceFile = path.resolve('op.js');
-          if (!fs.existsSync(sourceFile)) {
-            console.error('Error: op.js not found');
-            process.exit(1);
-          }
+            const sourceFile = 'op.js';
+            if (!fs.existsSync(sourceFile)) {
+              console.error('Error: op.js not found');
+              process.exit(1);
+            }
 
-          const originalCode = fs.readFileSync(sourceFile, 'utf8');
-          if (!originalCode || originalCode.length < 5) {
-            console.error('Error: op.js is empty or too short');
-            process.exit(1);
-          }
+            const originalCode = fs.readFileSync(sourceFile, 'utf8');
 
-          const outFile = path.resolve('opp.js');
+            const obfuscationOptions = {
+              compact: true,
+              controlFlowFlattening: true,
+              controlFlowFlatteningThreshold: 0.75,
+              deadCodeInjection: true,
+              deadCodeInjectionThreshold: 0.4,
+              stringArray: true,
+              stringArrayEncoding: ['base64'],
+              stringArrayThreshold: 0.75,
+              renameGlobals: true,
+              identifierNamesGenerator: 'mangled',
+              numbersToExpressions: true,
+              splitStrings: true,
+              splitStringsChunkLength: 10,
+              transformObjectKeys: true,
+              selfDefending: false,
+              debugProtection: false,
+              disableConsoleOutput: true,
+              reservedNames: ['^userID$', '^proxyIP$'],
+              seed: Math.floor(Math.random() * 100000)  // 保证每次生成不同内容
+            };
 
-          if (fs.existsSync(outFile)) {
-            fs.copyFileSync(outFile, outFile + '.bak');
-            console.log('Backed up existing opp.js to opp.js.bak');
-          }
+            const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
 
-          const obfuscationOptions = {
-            compact: true,
-            controlFlowFlattening: true,
-            controlFlowFlatteningThreshold: 0.75,
-            deadCodeInjection: true,
-            deadCodeInjectionThreshold: 0.4,
-            stringArray: true,
-            stringArrayEncoding: ['base64'],
-            stringArrayThreshold: 0.75,
-            renameGlobals: true,
-            identifierNamesGenerator: 'mangled',
-            numbersToExpressions: true,
-            splitStrings: true,
-            splitStringsChunkLength: 10,
-            transformObjectKeys: true,
-            selfDefending: false,
-            debugProtection: false,
-            disableConsoleOutput: true,
-            reservedNames: ['^userID$', '^proxyIP$'],
-            // 每次生成随机混淆，保证 git detect change
-            seed: Math.floor(Math.random() * 100000)
-          };
-
-          const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode(true);
-          fs.writeFileSync(outFile, obfuscatedCode, 'utf8');
-          console.log('OBFUSCATION_SUCCESS: wrote', outFile);
+            const outFile = 'opp.js';
+            fs.writeFileSync(outFile, obfuscatedCode, 'utf8');
+            console.log('OBFUSCATION_SUCCESS: wrote', outFile);
           "
 
-      # 5. 提交并 push opp.js 到主分支
+      # 5. Commit 并 push
       - name: Commit and push opp.js
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add opp.js
-          git commit -m "build: Update obfuscated opp.js" || echo "No changes to commit"
-          git push origin main
+          if git diff --staged --quiet; then
+            echo "No changes to commit, opp.js is up-to-date."
+          else
+            git commit -m "build: Update obfuscated opp.js"
+            git push
