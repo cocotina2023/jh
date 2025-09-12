@@ -24,10 +24,10 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # 4. 生成并混淆 opp.js，只保留 userID 和 proxyIPs
+      # 4. 直接用 node -e 混淆 opp.js
       - name: Generate and obfuscate opp.js
         run: |
-          cat > obfuscate-temp.js <<'EOF'
+          node -e '
           const fs = require("fs");
           const path = require("path");
           const JavaScriptObfuscator = require("javascript-obfuscator");
@@ -36,21 +36,15 @@ jobs:
           const outputDir = "dist";
           const outputFile = path.join(outputDir, "opp.js");
 
-          // 检查源文件
           if (!fs.existsSync(sourceFile)) {
-            console.error(`错误：源文件 ${sourceFile} 未找到！`);
+            console.error(`Error: ${sourceFile} not found!`);
             process.exit(1);
           }
 
-          // 确保输出目录存在
-          if (!fs.existsSync(outputDir)) {
-            fs.mkdirSync(outputDir);
-          }
+          if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
 
-          // 读取原始代码
           const originalCode = fs.readFileSync(sourceFile, "utf8");
 
-          // 混淆配置
           const obfuscationOptions = {
             esModule: true,
             compact: true,
@@ -68,35 +62,30 @@ jobs:
             splitStringsChunkLength: 10,
             transformObjectKeys: true,
             selfDefending: false,
-            debugProtection: false,
+            debugProtection: false
           };
 
-          // 生成混淆代码
           const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
 
-          // header: 只保留 userID 和 proxyIPs
-          const header = `// version base on commit 43fad05dcdae3b723c53c226f8181fc5bd47223e, time is 2023-06-22 15:20:02 UTC
-          // @ts-ignore
-          let userID = "86c50e3a-5b87-49dd-bd20-03c7f2735e40";
-          const proxyIPs = [""];`;
+          const header = `// version base on commit 43fad05dcdae3b723c53c226f8181fc5bd47223e
+// @ts-ignore
+let userID = "86c50e3a-5b87-49dd-bd20-03c7f2735e40";
+const proxyIPs = [""];`;
 
           const finalCode = header + "\n\n" + obfuscatedCode;
 
-          // 写入输出文件
           fs.writeFileSync(outputFile, finalCode, "utf8");
-          console.log(`混淆後的文件已保存到: ${outputFile}`);
-          EOF
+          console.log(`Obfuscated file written to ${outputFile}`);
+          '
 
-          node obfuscate-temp.js
-
-      # 5. 提交并推送 opp.js
+      # 5. Commit 并 push opp.js
       - name: Commit and push opp.js
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add dist/opp.js
           if git diff --staged --quiet; then
-            echo "No changes to commit, dist/opp.js is already up-to-date."
+            echo "No changes to commit"
           else
             git commit -m "build: Obfuscate op.js to dist/opp.js"
             git push
