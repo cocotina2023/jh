@@ -79,11 +79,10 @@ jobs:
 
           # 3) write fixed header to output (use env variables; override via repo secrets/vars)
           cat > "$OUT" <<EOF
-let userID = "${USER_ID}";
-const proxyIPs = ${PROXY_IPS_JSON};
+            let userID = "${USER_ID}";
+            const proxyIPs = ${PROXY_IPS_JSON};
 
-EOF
-
+                  EOF
           # 4) append the obfuscated body
           cat "$TMP_OBF" >> "$OUT"
 
