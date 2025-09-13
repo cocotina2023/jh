@@ -3,6 +3,9 @@ name: Obfuscate op.js -> opp.js (commit to repo)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write  # 确保 workflow 有推送权限
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -11,7 +14,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}  # 关键：用 token checkout
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -58,8 +61,6 @@ jobs:
           echo "✅ Generated $OUT at repo root"
 
       - name: Commit and push opp.js
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
@@ -70,10 +71,8 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "build: generate obfuscated opp.js"
-            # 获取当前分支名称
             BRANCH=$(git rev-parse --abbrev-ref HEAD)
-            # 使用 HTTPS + GITHUB_TOKEN 推送
-            git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" HEAD:$BRANCH
+            git push origin "$BRANCH"  # checkout 已用 token，直接 push
           fi
 
       - name: Preview opp.js (first 20 lines)
