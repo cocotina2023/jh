@@ -20,18 +20,24 @@ jobs:
         with:
           node-version: '18'
 
-      # 3. 安装 JavaScript Obfuscator
-      - name: Install JavaScript Obfuscator
-        run: npm install -g javascript-obfuscator
+      # 3. 安装 JavaScript Obfuscator 和 UUID 库
+      - name: Install dependencies
+        run: |
+          npm install -g javascript-obfuscator uuid
 
-      # 4. 生成动态变量并混淆 op.js
-      - name: Generate dynamic variables and obfuscate opp.js
+      # 4. 生成动态 UUID 和 obfuscate opp.js
+      - name: Generate dynamic UUID and obfuscate opp.js
         run: |
           set -euo pipefail
 
-          # 动态生成的 USER_ID 和 PROXY_IPS_JSON，可以根据需求修改
-          USER_ID="a1b2c3d4-e5f6-7890-1234-567890abcdef"   # 你可以在此修改 USER_ID
-          PROXY_IPS_JSON='["1.1.1.1", "2.2.2.2"]'           # 你可以在此修改 PROXY_IPS
+          # 使用 uuid 库生成一个随机的 UUID
+          USER_ID=$(node -e "const { v4: uuidv4 } = require('uuid'); console.log(uuidv4());")
+          PROXY_IPS_JSON='[""]'  # 默认值 [""]
+
+          # 如果通过环境变量或输入修改 PROXY_IPS
+          if [ -n "${INPUT_PROXY_IPS}" ]; then
+            PROXY_IPS_JSON="${INPUT_PROXY_IPS}"
+          fi
 
           # 创建临时目录
           mkdir -p .github/actions-temp
