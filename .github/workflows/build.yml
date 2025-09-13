@@ -1,4 +1,4 @@
-name: Obfuscate op.js build (header outside)
+name: Obfuscate op.js (reserved header)
 
 on:
   workflow_dispatch:
@@ -23,19 +23,22 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install -g javascript-obfuscator
 
-      - name: Obfuscate op.js -> body
+      - name: Obfuscate op.js (preserve header)
         run: |
-          mkdir -p .github/actions-temp
-          TMP_OBF=.github/actions-temp/op.body.js
-          OUT=opp.js
+          set -euo pipefail
 
           if [ ! -f op.js ]; then
-            echo "Error: op.js not found in repo root"
+            echo "Error: op.js not found"
             exit 1
           fi
 
-          # 混淆 op.js 主体
-          javascript-obfuscator op.js --output "$TMP_OBF" --compact true \
+          # 输出文件
+          OUT=opp.js
+
+          # 执行混淆，保留 userID 和 proxyIPs
+          javascript-obfuscator op.js \
+            --output "$OUT" \
+            --compact true \
             --control-flow-flattening true \
             --control-flow-flattening-threshold 0.75 \
             --dead-code-injection true \
@@ -51,19 +54,10 @@ jobs:
             --transform-object-keys true \
             --self-defending false \
             --debug-protection false \
-            --disable-console-output true
+            --disable-console-output true \
+            --reserved-names '^userID$|^proxyIPs$'
 
-          # 写 header（可自由修改）
-          cat > "$OUT" <<EOF
-           let userID = "a1b2c3d4-e5f6-7890-1234-567890abcdef";
-            const proxyIPs = [""];
-              EOF
-
-          # 拼接混淆体
-          cat "$TMP_OBF" >> "$OUT"
-
-          rm -rf .github/actions-temp
-          echo "✅ Generated $OUT at repo root"
+          echo "✅ Generated $OUT (header preserved) at repo root"
 
       - name: Commit and push opp.js
         run: |
@@ -74,7 +68,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "build: generate opp.js (header outside, body obfuscated)"
+            git commit -m "build: obfuscate op.js (header preserved)"
             BRANCH=$(git rev-parse --abbrev-ref HEAD)
             git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:$BRANCH
           fi
