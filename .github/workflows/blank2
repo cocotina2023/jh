@@ -1,0 +1,105 @@
+name: Obfuscate op.js with header
+
+on:
+  workflow_dispatch:  # 允許手動觸發
+
+permissions:
+  contents: write  # 允許 workflow push 回倉庫
+
+jobs:
+  build-and-obfuscate:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout 倉庫
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}  # 使用 token 以允許推送
+
+      # 2. 設定 Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'  
+
+      # 3. 安裝混淆工具
+      - name: Install JavaScript Obfuscator
+        run: npm install javascript-obfuscator
+
+      # 4. 混淆 op.js 並保留 header
+      - name: Generate and obfuscate op.js
+        run: |
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+          const JavaScriptObfuscator = require('javascript-obfuscator');
+
+          const sourceFile = 'op.js';
+          const outputDir = 'dist';
+          const outputFile = path.join(outputDir, 'opp.js');
+
+          if (!fs.existsSync(sourceFile)) {
+            console.error(\`Error: \${sourceFile} not found!\`);
+            process.exit(1);
+          }
+
+          if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir);
+          }
+
+          // 混淆源文件
+          const originalCode = fs.readFileSync(sourceFile, 'utf8');
+          const obfuscationOptions = {
+            esModule: true,
+            compact: true,
+            controlFlowFlattening: true,
+            controlFlowFlatteningThreshold: 0.75,
+            deadCodeInjection: true,
+            deadCodeInjectionThreshold: 0.4,
+            stringArray: true,
+            stringArrayEncoding: ['base64'],
+            stringArrayThreshold: 0.75,
+            renameGlobals: true,
+            identifierNamesGenerator: 'mangled',
+            numbersToExpressions: true,
+            splitStrings: true,
+            splitStringsChunkLength: 10,
+            transformObjectKeys: true,
+            selfDefending: false,
+            debugProtection: false
+          };
+          const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
+
+          // 外部 header 变量，不混淆
+          const header = 'let userID = \"86c50e3a-5b87-49dd-bd20-03c7f2735e40\";\nconst proxyIPs = [\"\"];';
+
+          // 合并 header 和混淆代码
+          const finalCode = header + '\n\n' + obfuscatedCode;
+
+          fs.writeFileSync(outputFile, finalCode, 'utf8');
+          console.log(\`Obfuscated file written to \${outputFile}\`);
+          "
+
+      # 5. Commit 並 push opp.js
+      - name: Commit and push opp.js
+        run: |
+          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+          git add dist/opp.js
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "build: Obfuscate op.js to dist/opp.js"
+            BRANCH=$(git rev-parse --abbrev-ref HEAD)
+            git push origin "$BRANCH"
+          fi
+
+      # 6. 預覽 opp.js 前 20 行
+      - name: Preview opp.js (first 20 lines)
+        run: |
+          echo "----- opp.js (first 20 lines) -----"
+          head -n 20 dist/opp.js || true
+          echo "-----------------------------------"
