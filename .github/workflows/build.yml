@@ -22,46 +22,52 @@ jobs:
         with:
           node-version: '18'
 
-      # 3. Install JavaScript Obfuscator
+      # 3. Install JavaScript Obfuscator locally
       - name: Install JavaScript Obfuscator
-        run: npm install -g javascript-obfuscator
+        run: npm install javascript-obfuscator@latest
 
-      # 4. Obfuscate op.js (ESM compatible)
-      - name: Obfuscate op.js (preserve header)
+      # 4. Obfuscate op.js (ESM compatible) via Node script
+      - name: Obfuscate op.js
         run: |
-          set -euo pipefail
+          node -e "
+            const fs = require('fs');
+            const JavaScriptObfuscator = require('javascript-obfuscator');
 
-          if [ ! -f op.js ]; then
-            echo "Error: op.js not found"
-            exit 1
-          fi
+            const inputFile = 'op.js';
+            const outputFile = 'opp.js';
 
-          OUT=opp.js
+            if (!fs.existsSync(inputFile)) {
+              console.error('Error: op.js not found');
+              process.exit(1);
+            }
 
-          # 混淆，保留 header 变量，生成 ESM 可部署
-          javascript-obfuscator op.js \
-            --output "$OUT" \
-            --es-modules true \
-            --compact true \
-            --control-flow-flattening true \
-            --control-flow-flattening-threshold 0.75 \
-            --dead-code-injection true \
-            --dead-code-injection-threshold 0.4 \
-            --string-array true \
-            --string-array-encoding base64 \
-            --string-array-threshold 0.75 \
-            --rename-globals true \
-            --identifier-names-generator mangled \
-            --numbers-to-expressions true \
-            --split-strings true \
-            --split-strings-chunk-length 10 \
-            --transform-object-keys true \
-            --self-defending false \
-            --debug-protection false \
-            --disable-console-output true \
-            --reserved-names '^userID$|^proxyIPs$'
+            const code = fs.readFileSync(inputFile, 'utf8');
 
-          echo "✅ Generated $OUT (ESM + header preserved)"
+            const obfuscated = JavaScriptObfuscator.obfuscate(code, {
+              esModule: true,
+              compact: true,
+              controlFlowFlattening: true,
+              controlFlowFlatteningThreshold: 0.75,
+              deadCodeInjection: true,
+              deadCodeInjectionThreshold: 0.4,
+              stringArray: true,
+              stringArrayEncoding: ['base64'],
+              stringArrayThreshold: 0.75,
+              renameGlobals: true,
+              identifierNamesGenerator: 'mangled',
+              numbersToExpressions: true,
+              splitStrings: true,
+              splitStringsChunkLength: 10,
+              transformObjectKeys: true,
+              selfDefending: false,
+              debugProtection: false,
+              disableConsoleOutput: true,
+              reservedNames: ['^userID$', '^proxyIPs$']
+            }).getObfuscatedCode();
+
+            fs.writeFileSync(outputFile, obfuscated, 'utf8');
+            console.log('✅ Generated opp.js (ESM compatible with header preserved)');
+          "
 
       # 5. Commit & push opp.js
       - name: Commit and push opp.js
@@ -77,7 +83,7 @@ jobs:
             BRANCH=$(git rev-parse --abbrev-ref HEAD)
             git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:$BRANCH
 
-      # 6. Preview opp.js (first 10 lines)
+      # 6. Preview opp.js header
       - name: Preview opp.js header
         run: |
           head -n 10 opp.js || true
