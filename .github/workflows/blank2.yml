@@ -1,4 +1,4 @@
-name: Obfuscate op.js with auto UUID
+name: Obfuscate op.js with editable UUID and proxyIPs
 
 on:
   workflow_dispatch:
@@ -11,23 +11,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repository 使用 GITHUB_TOKEN
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. 设置 Node.js
+      # 2. Setup Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      # 3. 安装本地 JavaScript Obfuscator
+      # 3. Install local JavaScript Obfuscator
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # 4. 混淆 op.js 并生成 dist/opp.js
+      # 4. Generate and obfuscate op.js
       - name: Generate and obfuscate op.js
         run: |
           node <<'EOF'
@@ -49,6 +49,7 @@ jobs:
           }
 
           const originalCode = fs.readFileSync(sourceFile, 'utf8');
+
           const obfuscationOptions = {
             esModule: true,
             compact: true,
@@ -71,10 +72,12 @@ jobs:
 
           const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
 
+          // --- header 不混淆 ---
           const userID = process.env.USER_ID || crypto.randomUUID();
           const proxyIPsEnv = process.env.PROXY_IPS || '';
           const proxyArray = proxyIPsEnv.split(',').map(ip => ip.trim()).filter(ip => ip.length>0);
-          const header = `let userID = "${userID}";\nconst proxyIPs = [${proxyArray.map(ip => '"' + ip + '"').join(', ')}];`;
+          // 保证即使为空也有双引号
+          const header = `let userID = "${userID}";\nconst proxyIPs = [${proxyArray.length>0 ? proxyArray.map(ip => '"' + ip + '"').join(', ') : '""'}];`;
 
           fs.writeFileSync(outputFile, header + '\n\n' + obfuscatedCode, 'utf8');
           console.log(`Obfuscated file written to ${outputFile}, UUID: ${userID}`);
