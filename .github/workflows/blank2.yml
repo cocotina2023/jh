@@ -1,10 +1,10 @@
-name: Obfuscate op.js with env UUID
+name: Obfuscate op.js with auto UUID
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # 手动触发
 
 permissions:
-  contents: write
+  contents: write  # 允许 workflow push 回仓库
 
 jobs:
   build-and-obfuscate:
@@ -17,25 +17,23 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Setup Node.js
+      # 2. 设置 Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      # 3. Install dependencies
-      - name: Install dependencies
-        run: |
-          npm install -g javascript-obfuscator
-          npm install uuid
+      # 3. 安装混淆工具
+      - name: Install JavaScript Obfuscator
+        run: npm install -g javascript-obfuscator
 
-      # 4. Generate and obfuscate op.js
+      # 4. 混淆 op.js 并生成 opp.js
       - name: Generate and obfuscate op.js
         run: |
           node -e "
           const fs = require('fs');
           const path = require('path');
-          const { v4: uuidv4 } = require('uuid');
+          const { randomUUID } = require('crypto');
           const JavaScriptObfuscator = require('javascript-obfuscator');
 
           const sourceFile = 'op.js';
@@ -75,11 +73,12 @@ jobs:
 
           const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
 
-          const userID = process.env.USER_ID || uuidv4();
+          // 自动生成 UUID
+          const userID = process.env.USER_ID || randomUUID();
           const proxyIPsEnv = process.env.PROXY_IPS || '';
           const proxyArray = proxyIPsEnv.split(',').map(ip => ip.trim()).filter(ip => ip.length > 0);
 
-          const header = \`let userID = \"\${userID}\";\nconst proxyIPs = [\${proxyArray.map(ip => '\"' + ip + '\"').join(', ')}];\`;
+          const header = \`let userID = "\${userID}";\nconst proxyIPs = [\${proxyArray.map(ip => '"' + ip + '"').join(', ')}];\`;
 
           const finalCode = header + '\n\n' + obfuscatedCode;
 
@@ -106,7 +105,7 @@ jobs:
             git push origin "$BRANCH"
           fi
 
-      # 6. Preview opp.js first 20 lines
+      # 6. 预览 opp.js 前 20 行
       - name: Preview opp.js (first 20 lines)
         run: |
           echo "----- opp.js (first 20 lines) -----"
