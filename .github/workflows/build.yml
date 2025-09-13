@@ -1,18 +1,11 @@
-name: Obfuscate all .js -> opp.js build
+name: Obfuscate op.js build
+
 on:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    env:
-      # 从仓库 Secrets 中读取（请先在 Settings -> Secrets 中添加）
-      USER_ID: ${{ secrets.USER_ID }}
-      PROXY_IPS_JSON: ${{ secrets.PROXY_IPS_JSON }}
-      OUT_FILE: opp.js
 
     steps:
       - name: Checkout repository
@@ -26,32 +19,21 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install -g javascript-obfuscator
 
-      - name: Obfuscate header and all tracked .js files, build ${OUT_FILE}
+      - name: Obfuscate op.js
         run: |
           set -euo pipefail
 
-          TMP_DIR=.github/actions-temp
-          mkdir -p "$TMP_DIR"
-          TMP_OBF="$TMP_DIR/file.obf.js"
-          OUT="$OUT_FILE"
+          SRC="op.js"
+          OUT="opp.js"
+          TMP_OBF=".github/actions-temp/op.obf.js"
+          mkdir -p .github/actions-temp
 
-          # 找到被 git 管理的 .js 文件，排除工作流目录、node_modules 和目标输出文件
-          mapfile -t JS_FILES < <(git ls-files '*.js' | grep -vE '^.github/|^node_modules/|^'"$OUT"'$' || true)
-
-          if [ "${#JS_FILES[@]}" -eq 0 ]; then
-            echo "No tracked .js files found. Exiting."
-            exit 0
+          if [ ! -f "$SRC" ]; then
+            echo "Error: $SRC not found"
+            exit 1
           fi
 
-          # -------------------------
-          # 1) 生成 header 源文件并单独混淆
-          # -------------------------
-          HEADER_SRC="$TMP_DIR/header_src.js"
-          HEADER_OBF="$TMP_DIR/header.obf.js"
-
-          printf 'let userID = "%s";\nconst proxyIPs = %s;\n' "$USER_ID" "$PROXY_IPS_JSON" > "$HEADER_SRC"
-
-          javascript-obfuscator "$HEADER_SRC" --output "$HEADER_OBF" --compact true \
+          javascript-obfuscator "$SRC" --output "$TMP_OBF" --compact true \
             --control-flow-flattening true \
             --control-flow-flattening-threshold 0.75 \
             --dead-code-injection true \
@@ -69,73 +51,12 @@ jobs:
             --debug-protection false \
             --disable-console-output true
 
-          # 清理 header 混淆产物
-          sed -i '/^\/\/ *<!--.*-->.*$/d' "$HEADER_OBF" || true
-          sed -i '/^\s*<!--.*-->.*$/d' "$HEADER_OBF" || true
-          sed -i '1s/^\xEF\xBB\xBF//' "$HEADER_OBF" || true
-          tr -cd '\11\12\15\40-\176' < "$HEADER_OBF" > "${HEADER_OBF}.clean" || true
-          mv "${HEADER_OBF}.clean" "$HEADER_OBF" || true
-
-          : > "$OUT"
-          cat "$HEADER_OBF" >> "$OUT"
-          rm -f "$HEADER_SRC" "$HEADER_OBF"
-
-          # -------------------------
-          # 2) 混淆其余所有 .js 文件并追加
-          # -------------------------
-          for src in "${JS_FILES[@]}"; do
-            echo "Obfuscating: $src"
-            javascript-obfuscator "$src" --output "$TMP_OBF" --compact true \
-              --control-flow-flattening true \
-              --control-flow-flattening-threshold 0.75 \
-              --dead-code-injection true \
-              --dead-code-injection-threshold 0.4 \
-              --string-array true \
-              --string-array-encoding base64 \
-              --string-array-threshold 0.75 \
-              --rename-globals true \
-              --identifier-names-generator mangled \
-              --numbers-to-expressions true \
-              --split-strings true \
-              --split-strings-chunk-length 10 \
-              --transform-object-keys true \
-              --self-defending false \
-              --debug-protection false \
-              --disable-console-output true
-
-            # 直接拼接，无额外清理
-            cat "$TMP_OBF" >> "$OUT"
-            rm -f "$TMP_OBF"
-          done
-
-          rm -rf "$TMP_DIR"
+          mv "$TMP_OBF" "$OUT"
+          rm -rf .github/actions-temp
           echo "✅ Generated $OUT at repo root"
 
-      - name: Ensure source .js ignored and commit opp.js
+      - name: Preview opp.js (first 20 lines)
         run: |
-          set -euo pipefail
-
-          touch .gitignore
-          for p in op.js src/*.js; do
-            if [ -e "$p" ] && ! grep -Fxq "$p" .gitignore; then
-              echo "$p" >> .gitignore
-              echo "Added $p to .gitignore"
-            fi
-          done
-
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add .gitignore "${OUT_FILE}" || true
-
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m 'build: generate obfuscated opp.js (header obfuscated)'
-            git push
-          fi
-
-      - name: Preview opp.js header (first 20 lines)
-        run: |
-          echo "----- ${OUT_FILE} (first 20 lines) -----"
-          head -n 20 "${OUT_FILE}" || true
-          echo "----------------------------------------"
+          echo "----- opp.js (first 20 lines) -----"
+          head -n 20 opp.js || true
+          echo "-----------------------------------"
