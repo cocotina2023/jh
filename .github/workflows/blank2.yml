@@ -1,38 +1,41 @@
-name: Obfuscate op.js blank2
+name: Obfuscate op.js with env UUID
 
 on:
-  workflow_dispatch:  # 允許手動觸發
+  workflow_dispatch:
 
 permissions:
-  contents: write  # 允許 workflow push 回倉庫
+  contents: write
 
 jobs:
   build-and-obfuscate:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout 倉庫
+      # 1. Checkout 仓库并使用 GITHUB_TOKEN
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}  # 使用 token 以允許推送
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. 設定 Node.js
+      # 2. Setup Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'  
+          node-version: '18'
 
-      # 3. 安裝混淆工具
-      - name: Install JavaScript Obfuscator
-        run: npm install javascript-obfuscator
+      # 3. Install dependencies
+      - name: Install dependencies
+        run: |
+          npm install -g javascript-obfuscator
+          npm install uuid
 
-      # 4. 混淆 op.js 並保留 header
+      # 4. Generate and obfuscate op.js
       - name: Generate and obfuscate op.js
         run: |
           node -e "
           const fs = require('fs');
           const path = require('path');
+          const { v4: uuidv4 } = require('uuid');
           const JavaScriptObfuscator = require('javascript-obfuscator');
 
           const sourceFile = 'op.js';
@@ -48,8 +51,8 @@ jobs:
             fs.mkdirSync(outputDir);
           }
 
-          // 混淆源文件
           const originalCode = fs.readFileSync(sourceFile, 'utf8');
+
           const obfuscationOptions = {
             esModule: true,
             compact: true,
@@ -69,19 +72,25 @@ jobs:
             selfDefending: false,
             debugProtection: false
           };
+
           const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
 
-          // 外部 header 变量，不混淆
-          const header = 'let userID = \"86c50e3a-5b87-49dd-bd20-03c7f2735e40\";\nconst proxyIPs = [\"\"];';
+          const userID = process.env.USER_ID || uuidv4();
+          const proxyIPsEnv = process.env.PROXY_IPS || '';
+          const proxyArray = proxyIPsEnv.split(',').map(ip => ip.trim()).filter(ip => ip.length > 0);
 
-          // 合并 header 和混淆代码
+          const header = \`let userID = \"\${userID}\";\nconst proxyIPs = [\${proxyArray.map(ip => '\"' + ip + '\"').join(', ')}];\`;
+
           const finalCode = header + '\n\n' + obfuscatedCode;
 
           fs.writeFileSync(outputFile, finalCode, 'utf8');
           console.log(\`Obfuscated file written to \${outputFile}\`);
           "
+        env:
+          USER_ID: ${{ secrets.USER_ID || '' }}
+          PROXY_IPS: ${{ secrets.PROXY_IPS || '' }}
 
-      # 5. Commit 並 push opp.js
+      # 5. Commit & push opp.js
       - name: Commit and push opp.js
         run: |
           git config --global user.name 'GitHub Actions Bot'
@@ -97,7 +106,7 @@ jobs:
             git push origin "$BRANCH"
           fi
 
-      # 6. 預覽 opp.js 前 20 行
+      # 6. Preview opp.js first 20 lines
       - name: Preview opp.js (first 20 lines)
         run: |
           echo "----- opp.js (first 20 lines) -----"
