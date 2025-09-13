@@ -1,4 +1,4 @@
-name: Obfuscate op.js (simple, robust)
+name: Obfuscate op.js build
 
 on:
   workflow_dispatch:
@@ -8,6 +8,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
+    env:
+      # Default userID (override with repo secret or variable)
+      USER_ID: a1b2c3d4-e5f6-7890-1234-567890abcdef
+      # Default proxyIPs JSON array string. Override with repo var if needed, e.g. '["1.2.3.4"]'
+      PROXY_IPS_JSON: '[""]'
 
     steps:
       - name: Checkout repository
@@ -23,9 +29,9 @@ jobs:
 
       - name: Obfuscate whole op.js and prepend fixed header
         run: |
-          set -e
+          set -euo pipefail
 
-          # ensure working files
+          # working files
           mkdir -p .github/actions-temp
           TMP_OBF=.github/actions-temp/op.obf.js
           OUT=opp.js
@@ -54,14 +60,29 @@ jobs:
             --debug-protection false \
             --disable-console-output true
 
-          # 2) remove any injected //<-- ... --> style lines at top (GAMFC etc.)
-          #    remove all lines that match // <!-- ... --> anywhere in file
+          # 2) remove any injected //<-- ... --> style lines at top or HTML comments anywhere
+          #    remove lines that match // <!-- ... --> anywhere
           sed -i '/^\/\/ *<!--.*-->.*$/d' "$TMP_OBF"
-          #    also remove standalone HTML comment lines like <!-- ... -->
+          #    remove standalone HTML comment lines like <!-- ... -->
           sed -i '/^\s*<!--.*-->.*$/d' "$TMP_OBF"
 
-          # 3) write fixed header to output (you can edit the UUID here if you want a different default)
-          printf 'let userID = "a1b2c3d4-e5f6-7890-1234-567890abcdef";\nconst proxyIPs = [""];\n\n' > "$OUT"
+          # 2b) remove any accidental header lines that may exist in the obfuscated file:
+          #     lines beginning with let userID = or const proxyIPs =
+          sed -i '/^\s*let\s\+userID\s*=/d' "$TMP_OBF"
+          sed -i '/^\s*const\s\+proxyIPs\s*=/d' "$TMP_OBF"
+
+          # 2c) remove BOM / non-printable characters (optional defensive clean)
+          #      transliterate to safe printable characters; remove \r
+          sed -i '1s/^\xEF\xBB\xBF//' "$TMP_OBF" || true
+          tr -cd '\11\12\15\40-\176' < "$TMP_OBF" > "${TMP_OBF}.clean" || true
+          mv "${TMP_OBF}.clean" "$TMP_OBF" || true
+
+          # 3) write fixed header to output (use env variables; override via repo secrets/vars)
+          cat > "$OUT" <<EOF
+let userID = "${USER_ID}";
+const proxyIPs = ${PROXY_IPS_JSON};
+
+EOF
 
           # 4) append the obfuscated body
           cat "$TMP_OBF" >> "$OUT"
@@ -73,9 +94,11 @@ jobs:
 
       - name: Ensure op.js ignored and commit opp.js
         run: |
+          set -euo pipefail
+
           # avoid committing source op.js accidentally
           touch .gitignore
-          if ! grep -qx 'op.js' .gitignore; then
+          if ! grep -Fxq 'op.js' .gitignore; then
             echo 'op.js' >> .gitignore
             echo 'Added op.js to .gitignore'
           fi
@@ -83,6 +106,7 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add .gitignore opp.js
+
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
