@@ -1,4 +1,4 @@
-name: Obfuscate op.js (with header preserved)
+name: Obfuscate op.js build
 
 on:
   workflow_dispatch:
@@ -9,12 +9,16 @@ jobs:
     permissions:
       contents: write
 
+    env:
+      # Default userID (override with repo secret or variable)
+      USER_ID: a1b2c3d4-e5f6-7890-1234-567890abcdef
+      # Default proxyIPs JSON array string. Override with repo var if needed, e.g. '["1.2.3.4"]'
+      PROXY_IPS_JSON: '[""]'
+
     steps:
       # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       # 2. Setup Node.js
       - name: Setup Node.js
@@ -22,54 +26,66 @@ jobs:
         with:
           node-version: '18'
 
-      # 3. Install JavaScript Obfuscator locally
+      # 3. Install JavaScript Obfuscator
       - name: Install JavaScript Obfuscator
-        run: npm install javascript-obfuscator@latest
+        run: npm install -g javascript-obfuscator
 
-      # 4. Obfuscate op.js (preserve header and no esModule)
-      - name: Obfuscate op.js
+      # 4. Obfuscate whole op.js and prepend fixed header
+      - name: Obfuscate whole op.js and prepend fixed header
         run: |
-          node -e "
-            const fs = require('fs');
-            const JavaScriptObfuscator = require('javascript-obfuscator');
+          set -euo pipefail
 
-            const inputFile = 'op.js';
-            const outputFile = 'opp.js';
+          # working files
+          mkdir -p .github/actions-temp
+          TMP_OBF=.github/actions-temp/op.obf.js
+          OUT=opp.js
 
-            if (!fs.existsSync(inputFile)) {
-              console.error('Error: op.js not found');
-              process.exit(1);
-            }
+          if [ ! -f op.js ]; then
+            echo "Error: op.js not found"
+            exit 1
+          fi
 
-            const code = fs.readFileSync(inputFile, 'utf8');
+          # 1) obfuscate the code to a temporary file
+          javascript-obfuscator op.js --output "$TMP_OBF" --compact true \
+            --control-flow-flattening true \
+            --control-flow-flattening-threshold 0.75 \
+            --dead-code-injection true \
+            --dead-code-injection-threshold 0.4 \
+            --string-array true \
+            --string-array-encoding base64 \
+            --string-array-threshold 0.75 \
+            --rename-globals true \
+            --identifier-names-generator mangled \
+            --numbers-to-expressions true \
+            --split-strings true \
+            --split-strings-chunk-length 10 \
+            --transform-object-keys true \
+            --self-defending false \
+            --debug-protection false \
+            --disable-console-output true
 
-            const obfuscated = JavaScriptObfuscator.obfuscate(code, {
-              compact: true,
-              controlFlowFlattening: true,
-              controlFlowFlatteningThreshold: 0.75,
-              deadCodeInjection: true,
-              deadCodeInjectionThreshold: 0.4,
-              stringArray: true,
-              stringArrayEncoding: ['base64'],
-              stringArrayThreshold: 0.75,
-              renameGlobals: true,
-              identifierNamesGenerator: 'mangled',
-              numbersToExpressions: true,
-              splitStrings: true,
-              splitStringsChunkLength: 10,
-              transformObjectKeys: true,
-              selfDefending: false,
-              debugProtection: false,
-              disableConsoleOutput: true,
-              reservedNames: ['^userID$', '^proxyIPs$']
-            }).getObfuscatedCode();
+          # 2) remove any injected comments and unwanted lines
+          sed -i '/^\/\/ *<!--.*-->.*$/d' "$TMP_OBF"
+          sed -i '/^\s*<!--.*-->.*$/d' "$TMP_OBF"
+          sed -i '/^\s*let\s\+userID\s*=/d' "$TMP_OBF"
+          sed -i '/^\s*const\s\+proxyIPs\s*=/d' "$TMP_OBF"
 
-            fs.writeFileSync(outputFile, obfuscated, 'utf8');
-            console.log('✅ Generated opp.js with header preserved (non-ESM)');
-          "
+          # 3) Write the fixed header to output (use env variables)
+          cat > "$OUT" <<EOF
+            let userID = "${USER_ID}";
+            const proxyIPs = ${PROXY_IPS_JSON};
+                  EOF
 
-      # 5. Commit & push opp.js
-      - name: Commit and push opp.js
+          # 4) Append the obfuscated code body
+          cat "$TMP_OBF" >> "$OUT"
+
+          # 5) Cleanup temporary files
+          rm -rf .github/actions-temp
+
+          echo "✅ Generated $OUT at repo root"
+
+      # 5. Ensure op.js is ignored and commit opp.js
+      - name: Ensure op.js ignored and commit opp.js
         run: |
           set -euo pipefail
 
@@ -80,18 +96,20 @@ jobs:
             echo 'Added op.js to .gitignore'
           fi
 
-          git config --global user.name 'GitHub Actions Bot'
+          git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add .gitignore opp.js
 
-          if git diff --cached --quiet; then
+          if git diff --staged --quiet; then
             echo "No changes to commit"
           else
             git commit -m 'build: generate obfuscated opp.js'
-            git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+            git push
           fi
-          
-      # 6. Preview opp.js header
-      - name: Preview opp.js header
+
+      # 6. Preview opp.js header (first 10 lines)
+      - name: Preview opp.js header (first 10 lines)
         run: |
+          echo "----- opp.js (first 10 lines) -----"
           head -n 10 opp.js || true
+          echo "-----------------------------------"
