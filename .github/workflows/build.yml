@@ -1,5 +1,4 @@
-name: Obfuscate op.js (reserved header)
-
+name: Obfuscate op.js build
 on:
   workflow_dispatch:
 
@@ -32,10 +31,9 @@ jobs:
             exit 1
           fi
 
-          # 输出文件
           OUT=opp.js
 
-          # 执行混淆，保留 userID 和 proxyIPs
+          # 使用 reserved-names 保留 header 变量
           javascript-obfuscator op.js \
             --output "$OUT" \
             --compact true \
@@ -57,7 +55,7 @@ jobs:
             --disable-console-output true \
             --reserved-names '^userID$|^proxyIPs$'
 
-          echo "✅ Generated $OUT (header preserved) at repo root"
+          echo "✅ Generated $OUT with header preserved"
 
       - name: Commit and push opp.js
         run: |
