@@ -1,4 +1,5 @@
-name: Obfuscate op.js build
+name: Obfuscate op.js (ESM + header preserved)
+
 on:
   workflow_dispatch:
 
@@ -9,19 +10,23 @@ jobs:
       contents: write
 
     steps:
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
+      # 3. Install JavaScript Obfuscator
       - name: Install JavaScript Obfuscator
         run: npm install -g javascript-obfuscator
 
+      # 4. Obfuscate op.js (ESM compatible)
       - name: Obfuscate op.js (preserve header)
         run: |
           set -euo pipefail
@@ -33,9 +38,10 @@ jobs:
 
           OUT=opp.js
 
-          # 使用 reserved-names 保留 header 变量
+          # 混淆，保留 header 变量，生成 ESM 可部署
           javascript-obfuscator op.js \
             --output "$OUT" \
+            --es-modules true \
             --compact true \
             --control-flow-flattening true \
             --control-flow-flattening-threshold 0.75 \
@@ -55,8 +61,9 @@ jobs:
             --disable-console-output true \
             --reserved-names '^userID$|^proxyIPs$'
 
-          echo "✅ Generated $OUT with header preserved"
+          echo "✅ Generated $OUT (ESM + header preserved)"
 
+      # 5. Commit & push opp.js
       - name: Commit and push opp.js
         run: |
           git config --global user.name 'GitHub Actions Bot'
@@ -66,11 +73,11 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "build: obfuscate op.js (header preserved)"
+            git commit -m "build: obfuscate op.js (ESM + header preserved)"
             BRANCH=$(git rev-parse --abbrev-ref HEAD)
             git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:$BRANCH
-          fi
 
-      - name: Preview opp.js (first 10 lines)
+      # 6. Preview opp.js (first 10 lines)
+      - name: Preview opp.js header
         run: |
           head -n 10 opp.js || true
