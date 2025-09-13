@@ -1,5 +1,4 @@
-name: Obfuscate all .js build
-
+name: Obfuscate all .js -> opp.js build
 on:
   workflow_dispatch:
 
@@ -10,9 +9,9 @@ jobs:
       contents: write
 
     env:
-      # 默认值（可在仓库 Settings -> Secrets / Variables 中覆盖）
-      USER_ID: a1b2c3d4-e5f6-7890-1234-567890abcdef
-      PROXY_IPS_JSON: '[""]'
+      # 从仓库 Secrets 中读取（请先在 Settings -> Secrets 中添加）
+      USER_ID: ${{ secrets.USER_ID }}
+      PROXY_IPS_JSON: ${{ secrets.PROXY_IPS_JSON }}
       OUT_FILE: opp.js
 
     steps:
@@ -27,7 +26,7 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install -g javascript-obfuscator
 
-      - name: Obfuscate all tracked .js files and build ${OUT_FILE}
+      - name: Obfuscate header and all tracked .js files, build ${OUT_FILE}
         run: |
           set -euo pipefail
 
@@ -36,7 +35,7 @@ jobs:
           TMP_OBF="$TMP_DIR/file.obf.js"
           OUT="$OUT_FILE"
 
-          # get tracked .js files (omit this workflow and generated file)
+          # 找到被 git 管理的 .js 文件，排除工作流目录、node_modules 和目标输出文件
           mapfile -t JS_FILES < <(git ls-files '*.js' | grep -vE '^.github/|^node_modules/|^'"$OUT"'$' || true)
 
           if [ "${#JS_FILES[@]}" -eq 0 ]; then
@@ -44,14 +43,48 @@ jobs:
             exit 0
           fi
 
-          # start fresh output file and write header (avoid heredoc to prevent YAML issues)
-          echo "let userID = \"${USER_ID}\";" > "$OUT"
-          echo "const proxyIPs = ${PROXY_IPS_JSON};" >> "$OUT"
-          echo "" >> "$OUT"
+          # -------------------------
+          # 1) 生成 header 源文件并单独混淆
+          # -------------------------
+          HEADER_SRC="$TMP_DIR/header_src.js"
+          HEADER_OBF="$TMP_DIR/header.obf.js"
 
+          printf 'let userID = "%s";\nconst proxyIPs = %s;\n' "$USER_ID" "$PROXY_IPS_JSON" > "$HEADER_SRC"
+
+          javascript-obfuscator "$HEADER_SRC" --output "$HEADER_OBF" --compact true \
+            --control-flow-flattening true \
+            --control-flow-flattening-threshold 0.75 \
+            --dead-code-injection true \
+            --dead-code-injection-threshold 0.4 \
+            --string-array true \
+            --string-array-encoding base64 \
+            --string-array-threshold 0.75 \
+            --rename-globals true \
+            --identifier-names-generator mangled \
+            --numbers-to-expressions true \
+            --split-strings true \
+            --split-strings-chunk-length 10 \
+            --transform-object-keys true \
+            --self-defending false \
+            --debug-protection false \
+            --disable-console-output true
+
+          # 清理 header 混淆产物
+          sed -i '/^\/\/ *<!--.*-->.*$/d' "$HEADER_OBF" || true
+          sed -i '/^\s*<!--.*-->.*$/d' "$HEADER_OBF" || true
+          sed -i '1s/^\xEF\xBB\xBF//' "$HEADER_OBF" || true
+          tr -cd '\11\12\15\40-\176' < "$HEADER_OBF" > "${HEADER_OBF}.clean" || true
+          mv "${HEADER_OBF}.clean" "$HEADER_OBF" || true
+
+          : > "$OUT"
+          cat "$HEADER_OBF" >> "$OUT"
+          rm -f "$HEADER_SRC" "$HEADER_OBF"
+
+          # -------------------------
+          # 2) 混淆其余所有 .js 文件并追加
+          # -------------------------
           for src in "${JS_FILES[@]}"; do
-            echo "Processing: $src"
-            # obfuscate to temp file
+            echo "Obfuscating: $src"
             javascript-obfuscator "$src" --output "$TMP_OBF" --compact true \
               --control-flow-flattening true \
               --control-flow-flattening-threshold 0.75 \
@@ -70,36 +103,20 @@ jobs:
               --debug-protection false \
               --disable-console-output true
 
-            # defensive cleanup: remove injected comment/header lines and BOM, non-printables
-            sed -i '/^\/\/ *<!--.*-->.*$/d' "$TMP_OBF" || true
-            sed -i '/^\s*<!--.*-->.*$/d' "$TMP_OBF" || true
-            sed -i '/^\s*let\s\+userID\s*=/d' "$TMP_OBF" || true
-            sed -i '/^\s*const\s\+proxyIPs\s*=/d' "$TMP_OBF" || true
-            sed -i '1s/^\xEF\xBB\xBF//' "$TMP_OBF" || true
-            tr -cd '\11\12\15\40-\176' < "$TMP_OBF" > "${TMP_OBF}.clean" || true
-            mv "${TMP_OBF}.clean" "$TMP_OBF" || true
-
-            # append a comment indicating original filename for debugging (optional)
-            printf "\n// ----- FILE: %s -----\n" "$src" >> "$OUT"
+            # 直接拼接，无额外清理
             cat "$TMP_OBF" >> "$OUT"
-            printf "\n// ----- END FILE: %s -----\n\n" "$src" >> "$OUT"
-
             rm -f "$TMP_OBF"
           done
 
-          # cleanup
           rm -rf "$TMP_DIR"
-
           echo "✅ Generated $OUT at repo root"
 
       - name: Ensure source .js ignored and commit opp.js
         run: |
           set -euo pipefail
 
-          # add common source files to .gitignore to avoid accidental commits (adjust as needed)
           touch .gitignore
           for p in op.js src/*.js; do
-            # only add if file exists in repo root or matched by git ls-files previously
             if [ -e "$p" ] && ! grep -Fxq "$p" .gitignore; then
               echo "$p" >> .gitignore
               echo "Added $p to .gitignore"
@@ -113,7 +130,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m 'build: generate obfuscated opp.js (all tracked .js files)'
+            git commit -m 'build: generate obfuscated opp.js (header obfuscated)'
             git push
           fi
 
