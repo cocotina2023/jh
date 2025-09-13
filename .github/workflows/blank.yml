@@ -3,6 +3,9 @@ name: Fully Obfuscate op.js
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write  # 允许 workflow 推送到仓库
+
 jobs:
   build-and-obfuscate:
     runs-on: ubuntu-latest
@@ -40,9 +43,7 @@ jobs:
             console.error('Error: op.js not found');
             process.exit(1);
           }
-          if (!fs.existsSync(outputDir)) {
-            fs.mkdirSync(outputDir);
-          }
+          if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir);
 
           const originalCode = fs.readFileSync(sourceFile, 'utf8');
 
@@ -71,7 +72,7 @@ jobs:
           console.log(`Obfuscated file written to ${outputFile}`);
           EOF
 
-      # 5. Commit & push dist/opp.js
+      # 5. Commit & push dist/opp.js using GITHUB_TOKEN
       - name: Commit and push opp.js
         run: |
           git config --global user.name 'GitHub Actions Bot'
@@ -84,5 +85,12 @@ jobs:
           else
             git commit -m "build: Fully obfuscate op.js to dist/opp.js"
             BRANCH=$(git rev-parse --abbrev-ref HEAD)
-            git push origin "$BRANCH"
+            git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:$BRANCH
           fi
+
+      # 6. Preview opp.js first 20 lines
+      - name: Preview opp.js
+        run: |
+          echo "----- opp.js (first 20 lines) -----"
+          head -n 20 dist/opp.js || true
+          echo "-----------------------------------"
