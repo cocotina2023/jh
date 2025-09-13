@@ -1,7 +1,7 @@
-name: Obfuscate and Deploy opp.js
+name: Build and Obfuscate op.js
 
 on:
-  workflow_dispatch:  # 允许手动触发部署
+  workflow_dispatch:
 
 jobs:
   build:
@@ -20,68 +20,57 @@ jobs:
         with:
           node-version: '18'
 
-      # 3. 安装依赖项，包括 uuid 和 javascript-obfuscator
+      # 3. 安装依赖项
       - name: Install dependencies
         run: |
-          npm install uuid javascript-obfuscator
+          npm install -g javascript-obfuscator
 
-      # 4. 生成动态 UUID 和 obfuscate opp.js
-      - name: Generate dynamic UUID and obfuscate opp.js
+      # 4. 设置环境变量（可以通过手动触发来传递这些值）
+      - name: Set Environment Variables
+        run: |
+          echo "USER_ID=${{ secrets.USER_ID }}" >> $GITHUB_ENV
+          echo "PROXY_IPS=${{ secrets.PROXY_IPS }}" >> $GITHUB_ENV
+
+      # 5. 混淆 op.js 文件，并保持一行混淆代码
+      - name: Obfuscate op.js
         run: |
           set -euo pipefail
 
-          # 使用 uuid 库生成一个随机的 UUID
-          USER_ID=$(node -e "const { v4: uuidv4 } = require('uuid'); console.log(uuidv4());")
-          PROXY_IPS_JSON='[""]'  # 默认值 [""]
-
-          # 如果通过环境变量或输入修改 PROXY_IPS
-          if [ -n "${INPUT_PROXY_IPS}" ]; then
-            PROXY_IPS_JSON="${INPUT_PROXY_IPS}"
-          fi
-
-          # 创建临时目录
-          mkdir -p .github/actions-temp
-          TMP_OBF=.github/actions-temp/op.obf.js
-          OUT=opp.js
-
+          # 如果没有 op.js 文件则退出
           if [ ! -f op.js ]; then
             echo "Error: op.js not found in repo root"
             exit 1
           fi
 
-          # 混淆 op.js 文件
+          # 创建临时目录和输出文件
+          mkdir -p .github/actions-temp
+          TMP_OBF=.github/actions-temp/op.obf.js
+          OUT=opp.js
+
+          # 混淆 op.js 文件，并生成一行混淆代码
           javascript-obfuscator op.js --output "$TMP_OBF" --compact true \
             --control-flow-flattening true \
-            --control-flow-flattening-threshold 0.75 \
             --dead-code-injection true \
-            --dead-code-injection-threshold 0.4 \
             --string-array true \
-            --string-array-encoding base64 \
-            --string-array-threshold 0.75 \
             --rename-globals true \
-            --identifier-names-generator mangled \
             --numbers-to-expressions true \
             --split-strings true \
-            --split-strings-chunk-length 10 \
             --transform-object-keys true \
             --self-defending false \
             --debug-protection false \
-            --disable-console-output true
+            --disable-console-output true \
+            --wrap=true
 
-          # 清除可能的无关注释和头部内容
-          sed -i '/^\/\/ *<!--.*-->.*$/d' "$TMP_OBF"
-          sed -i '/^\s*<!--.*-->.*$/d' "$TMP_OBF"
-          sed -i '/^\s*let\s\+userID\s*=/d' "$TMP_OBF"
-          sed -i '/^\s*const\s\+proxyIPs\s*=/d' "$TMP_OBF"
-
-          # 在生成的 opp.js 中插入动态的 USER_ID 和 PROXY_IPS_JSON
+          # 获取传入的动态值并插入到 opp.js 文件头部
           cat > "$OUT" <<EOF
-          let userID = "${USER_ID}";
-          const proxyIPs = ${PROXY_IPS_JSON};
+          // BEGIN USER CONFIGURABLE SECTION
+          let userID = "${USER_ID}";  // 这里会自动使用传入的 USER_ID
+          const proxyIPs = ${PROXY_IPS};  // 这里会自动使用传入的 PROXY_IPS
+          // END USER CONFIGURABLE SECTION
 
           EOF
 
-          # 追加混淆后的代码
+          # 追加混淆后的 op.js 内容（将其合并为一行）
           cat "$TMP_OBF" >> "$OUT"
 
           # 清理临时文件
@@ -89,7 +78,7 @@ jobs:
 
           echo "✅ Generated opp.js at repo root"
 
-      # 5. 确保 op.js 不被提交并提交 opp.js
+      # 6. 提交生成的 opp.js 文件
       - name: Commit and push opp.js
         run: |
           set -euo pipefail
@@ -112,7 +101,7 @@ jobs:
             git push
           fi
 
-      # 6. 预览生成的 opp.js 头部内容（前 10 行）
+      # 7. 预览生成的 opp.js 头部内容（前 10 行）
       - name: Preview opp.js header (first 10 lines)
         run: |
           echo "----- opp.js (first 10 lines) -----"
