@@ -1,10 +1,10 @@
 name: Obfuscate op.js with auto UUID
 
 on:
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:
 
 permissions:
-  contents: write  # 允许 workflow push 回仓库
+  contents: write
 
 jobs:
   build-and-obfuscate:
@@ -30,50 +30,55 @@ jobs:
       # 4. 混淆 op.js 并生成 dist/opp.js
       - name: Generate and obfuscate op.js
         run: |
-          node -e "\
-            const fs = require('fs');\
-            const path = require('path');\
-            const crypto = require('crypto');\
-            const JavaScriptObfuscator = require('javascript-obfuscator');\
-\
-            const sourceFile = 'op.js';\
-            const outputDir = 'dist';\
-            const outputFile = path.join(outputDir, 'opp.js');\
-\
-            if (!fs.existsSync(sourceFile)) { console.error('Error: op.js not found'); process.exit(1); }\
-            if (!fs.existsSync(outputDir)) { fs.mkdirSync(outputDir); }\
-\
-            const originalCode = fs.readFileSync(sourceFile, 'utf8');\
-            const obfuscationOptions = {\
-              esModule: true,\
-              compact: true,\
-              controlFlowFlattening: true,\
-              controlFlowFlatteningThreshold: 0.75,\
-              deadCodeInjection: true,\
-              deadCodeInjectionThreshold: 0.4,\
-              stringArray: true,\
-              stringArrayEncoding: ['base64'],\
-              stringArrayThreshold: 0.75,\
-              renameGlobals: true,\
-              identifierNamesGenerator: 'mangled',\
-              numbersToExpressions: true,\
-              splitStrings: true,\
-              splitStringsChunkLength: 10,\
-              transformObjectKeys: true,\
-              selfDefending: false,\
-              debugProtection: false\
-            };\
-\
-            const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();\
-\
-            const userID = process.env.USER_ID || crypto.randomUUID();\
-            const proxyIPsEnv = process.env.PROXY_IPS || '';\
-            const proxyArray = proxyIPsEnv.split(',').map(ip => ip.trim()).filter(ip => ip.length>0);\
-            const header = `let userID = \"${userID}\";\nconst proxyIPs = [${proxyArray.map(ip => '\"'+ip+'\"').join(', ')}];`;\
-\
-            fs.writeFileSync(outputFile, header + '\n\n' + obfuscatedCode, 'utf8');\
-            console.log(`Obfuscated file written to ${outputFile}, UUID: ${userID}`);\
-          "
+          node <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          const crypto = require('crypto');
+          const JavaScriptObfuscator = require('javascript-obfuscator');
+
+          const sourceFile = 'op.js';
+          const outputDir = 'dist';
+          const outputFile = path.join(outputDir, 'opp.js');
+
+          if (!fs.existsSync(sourceFile)) {
+            console.error('Error: op.js not found');
+            process.exit(1);
+          }
+          if (!fs.existsSync(outputDir)) {
+            fs.mkdirSync(outputDir);
+          }
+
+          const originalCode = fs.readFileSync(sourceFile, 'utf8');
+          const obfuscationOptions = {
+            esModule: true,
+            compact: true,
+            controlFlowFlattening: true,
+            controlFlowFlatteningThreshold: 0.75,
+            deadCodeInjection: true,
+            deadCodeInjectionThreshold: 0.4,
+            stringArray: true,
+            stringArrayEncoding: ['base64'],
+            stringArrayThreshold: 0.75,
+            renameGlobals: true,
+            identifierNamesGenerator: 'mangled',
+            numbersToExpressions: true,
+            splitStrings: true,
+            splitStringsChunkLength: 10,
+            transformObjectKeys: true,
+            selfDefending: false,
+            debugProtection: false
+          };
+
+          const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
+
+          const userID = process.env.USER_ID || crypto.randomUUID();
+          const proxyIPsEnv = process.env.PROXY_IPS || '';
+          const proxyArray = proxyIPsEnv.split(',').map(ip => ip.trim()).filter(ip => ip.length>0);
+          const header = `let userID = "${userID}";\nconst proxyIPs = [${proxyArray.map(ip => '"' + ip + '"').join(', ')}];`;
+
+          fs.writeFileSync(outputFile, header + '\n\n' + obfuscatedCode, 'utf8');
+          console.log(`Obfuscated file written to ${outputFile}, UUID: ${userID}`);
+          EOF
         env:
           USER_ID: ${{ secrets.USER_ID || '' }}
           PROXY_IPS: ${{ secrets.PROXY_IPS || '' }}
