@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout 仓库并使用 GITHUB_TOKEN
+      # 1. Checkout repository 使用 GITHUB_TOKEN
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -23,11 +23,11 @@ jobs:
         with:
           node-version: '18'
 
-      # 3. 安装混淆工具
+      # 3. 安装本地依赖（避免 MODULE_NOT_FOUND）
       - name: Install JavaScript Obfuscator
-        run: npm install -g javascript-obfuscator
+        run: npm install javascript-obfuscator
 
-      # 4. 混淆 op.js 并生成 opp.js
+      # 4. 混淆 op.js 并生成 dist/opp.js
       - name: Generate and obfuscate op.js
         run: |
           node -e "
@@ -105,7 +105,7 @@ jobs:
             git push origin "$BRANCH"
           fi
 
-      # 6. 预览 opp.js 前 20 行
+      # 6. Preview opp.js 前 20 行
       - name: Preview opp.js (first 20 lines)
         run: |
           echo "----- opp.js (first 20 lines) -----"
