@@ -1,14 +1,13 @@
-name: Obfuscate op.js and replace/insert header
+name: Obfuscate op.js build (header outside)
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -21,19 +20,21 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install JavaScript Obfuscator (CLI)
+      - name: Install JavaScript Obfuscator
         run: npm install -g javascript-obfuscator
 
-      - name: Obfuscate op.js -> temp
+      - name: Obfuscate op.js -> body
         run: |
-          set -euo pipefail
           mkdir -p .github/actions-temp
-          TMP_OBF=.github/actions-temp/op.obf.js
+          TMP_OBF=.github/actions-temp/op.body.js
+          OUT=opp.js
+
           if [ ! -f op.js ]; then
-            echo "Error: op.js not found"
+            echo "Error: op.js not found in repo root"
             exit 1
           fi
 
+          # 混淆 op.js 主体
           javascript-obfuscator op.js --output "$TMP_OBF" --compact true \
             --control-flow-flattening true \
             --control-flow-flattening-threshold 0.75 \
@@ -52,70 +53,17 @@ jobs:
             --debug-protection false \
             --disable-console-output true
 
-          if [ ! -f "$TMP_OBF" ]; then
-            echo "Error: obfuscation failed: $TMP_OBF not found"
-            exit 1
-          fi
+          # 写 header（可自由修改）
+          cat > "$OUT" <<EOF
+           let userID = "a1b2c3d4-e5f6-7890-1234-567890abcdef";
+            const proxyIPs = [""];
+              EOF
 
-          # move obfuscated file to repo root as opp.js (no header yet)
-          mv "$TMP_OBF" opp.js
-          rm -rf .github/actions-temp || true
-          echo "✅ Generated opp.js (obfuscated) at repo root"
+          # 拼接混淆体
+          cat "$TMP_OBF" >> "$OUT"
 
-      - name: Replace or insert header in opp.js
-        env:
-          NEW_UUID: ${{ secrets.NEW_UUID || '' }}
-          PROXY_IPS: ${{ secrets.PROXY_IPS || '' }}
-        run: |
-          node <<'NODE'
-          const fs = require('fs');
-          const file = 'opp.js';
-
-          if (!fs.existsSync(file)) {
-            console.error('opp.js not found — cannot replace header');
-            process.exit(1);
-          }
-
-          let s = fs.readFileSync(file, 'utf8');
-
-          // New values from environment
-          const newUuid = process.env.NEW_UUID && process.env.NEW_UUID.trim();
-          const proxyEnv = process.env.PROXY_IPS || '';
-          const proxyArr = proxyEnv
-            ? proxyEnv.split(',').map(v => v.trim()).filter(Boolean)
-            : [''];
-
-          const headerLine = (uuid, arr) => `let userID = "${uuid}";\nconst proxyIPs = ${JSON.stringify(arr)};`;
-
-          // Broad regexes to find existing header lines (loose matching)
-          const userIdRegex = /let\s+userID\s*=\s*"[^"]*"\s*;/;
-          const proxyRegex = /const\s+proxyIPs\s*=\s*\[[^\]]*\]\s*;/;
-
-          let replaced = false;
-
-          if (userIdRegex.test(s) || proxyRegex.test(s)) {
-            if (newUuid) {
-              s = s.replace(userIdRegex, `let userID = "${newUuid}";`);
-              replaced = true;
-            }
-            // replace proxyIPs line (always replace, even if new list is just [""])
-            s = s.replace(proxyRegex, `const proxyIPs = ${JSON.stringify(proxyArr)};`);
-            replaced = true;
-          }
-
-          if (!replaced) {
-            // Prepend header if not found (use provided NEW_UUID or a stable placeholder)
-            const uuidToWrite = newUuid || 'a1b2c3d4-e5f6-7890-1234-567890abcdef';
-            const header = headerLine(uuidToWrite, proxyArr) + '\n\n';
-            s = header + s;
-            console.log('Header not found — prepended new header.');
-          } else {
-            console.log('Header replaced in-place (or proxyIPs updated).');
-          }
-
-          fs.writeFileSync(file, s, 'utf8');
-          console.log('Updated opp.js header -> userID:', newUuid || '(default kept)', ' proxyIPs:', proxyArr);
-          NODE
+          rm -rf .github/actions-temp
+          echo "✅ Generated $OUT at repo root"
 
       - name: Commit and push opp.js
         run: |
@@ -123,17 +71,14 @@ jobs:
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
           git add opp.js
-
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "build: obfuscate op.js and update opp.js header"
+            git commit -m "build: generate opp.js (header outside, body obfuscated)"
             BRANCH=$(git rev-parse --abbrev-ref HEAD)
             git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:$BRANCH
           fi
 
-      - name: Preview opp.js (first 20 lines)
+      - name: Preview opp.js (first 10 lines)
         run: |
-          echo "----- opp.js (first 20 lines) -----"
-          head -n 20 opp.js || true
-          echo "-----------------------------------"
+          head -n 10 opp.js || true
