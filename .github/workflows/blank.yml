@@ -1,33 +1,31 @@
-name: Obfuscate op.js blank
+name: Obfuscate op.js fully
 
 on:
-  workflow_dispatch:  # 允許手動觸發
+  workflow_dispatch:
 
 jobs:
   build-and-obfuscate:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write  # 允許 workflow push 回倉庫
 
     steps:
-      # 1. Checkout 倉庫
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. 設定 Node.js
+      # 2. Setup Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      # 3. 安裝混淆工具
+      # 3. Install JavaScript Obfuscator
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # 4. 產生並混淆 JS 檔案
-      - name: Generate and obfuscate op.js
+      # 4. Obfuscate op.js including UUID and proxyIPs
+      - name: Obfuscate op.js
         run: |
-          node -e "
+          node <<'EOF'
           const fs = require('fs');
           const path = require('path');
           const JavaScriptObfuscator = require('javascript-obfuscator');
@@ -37,15 +35,21 @@ jobs:
           const outputFile = path.join(outputDir, 'opp.js');
 
           if (!fs.existsSync(sourceFile)) {
-            console.error(\`Error: \${sourceFile} not found!\`);
+            console.error('Error: op.js not found');
             process.exit(1);
           }
-
           if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir);
           }
 
+          // 直接把 header 放在 op.js 前也混淆
+          const userID = 'd78e37b0-09ff-46d0-890f-ff3791297005';
+          const proxyIPs = [""];
+
+          const header = `let userID = "${userID}";\nconst proxyIPs = ${JSON.stringify(proxyIPs)};\n\n`;
+
           const originalCode = fs.readFileSync(sourceFile, 'utf8');
+          const combinedCode = header + originalCode;
 
           const obfuscationOptions = {
             esModule: true,
@@ -67,18 +71,12 @@ jobs:
             debugProtection: false
           };
 
-          const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
+          const obfuscatedCode = JavaScriptObfuscator.obfuscate(combinedCode, obfuscationOptions).getObfuscatedCode();
+          fs.writeFileSync(outputFile, obfuscatedCode, 'utf8');
+          console.log(`Obfuscated file written to ${outputFile}`);
+          EOF
 
-          const header = \`let userID = \"86c50e3a-5b87-49dd-bd20-03c7f2735e40\";\nconst proxyIPs = [\"\"];\`;
-
-          // --- 就是修改這裡來移除空行 ---
-          const finalCode = header + '\n' + obfuscatedCode;
-
-          fs.writeFileSync(outputFile, finalCode, 'utf8');
-          console.log(\`Obfuscated file written to \${outputFile}\`);
-          "
-
-      # 5. Commit 並 push opp.js
+      # 5. Commit & push
       - name: Commit and push opp.js
         run: |
           git config --global user.name 'GitHub Actions Bot'
@@ -87,6 +85,7 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "build: Obfuscate op.js to dist/opp.js"
-            git push
+            git commit -m "build: Fully obfuscate op.js to dist/opp.js"
+            BRANCH=$(git rev-parse --abbrev-ref HEAD)
+            git push origin "$BRANCH"
           fi
