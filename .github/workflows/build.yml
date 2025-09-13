@@ -1,72 +1,47 @@
-name: Obfuscate and Deploy op.js
+name: Obfuscate and Deploy opp.js
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # 允许手动触发部署
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write  # 允许 workflow push 回仓库
 
     steps:
-      # Step 1: Checkout repository
+      # 1. Checkout 仓库
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Setup Node.js environment
+      # 2. 设置 Node.js 环境
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      # Step 3: Install JavaScript Obfuscator
+      # 3. 安装 JavaScript Obfuscator
       - name: Install JavaScript Obfuscator
         run: npm install -g javascript-obfuscator
 
-      # Step 4: Check and insert dynamic workerID and proxyIPs
-      - name: Check and insert dynamic workerID and proxyIPs
+      # 4. 生成动态变量并混淆 op.js
+      - name: Generate dynamic variables and obfuscate opp.js
         run: |
           set -euo pipefail
 
-          # 默认的 workerID 和 proxyIPs
-          DEFAULT_USER_ID="a1b2c3d4-e5f6-7890-1234-567890abcdef"
-          DEFAULT_PROXY_IPS='[""]'
+          # 动态生成的 USER_ID 和 PROXY_IPS_JSON，可以根据需求修改
+          USER_ID="a1b2c3d4-e5f6-7890-1234-567890abcdef"   # 你可以在此修改 USER_ID
+          PROXY_IPS_JSON='["1.1.1.1", "2.2.2.2"]'           # 你可以在此修改 PROXY_IPS
 
-          # 提取文件开头的 workerID 和 proxyIPs
-          WORKER_ID=$(grep -oP 'let\s+workerID\s*=\s*"\K[^"]+' opp.js || echo "")
-          PROXY_IPS=$(grep -oP 'const\s+proxyIPs\s*=\s*\[\K[^\]]+' opp.js || echo "")
-
-          # 如果没被修改，则插入默认值
-          if [ -z "$WORKER_ID" ] || [ "$WORKER_ID" == "$DEFAULT_USER_ID" ]; then
-            echo "Using default workerID"
-            WORKER_ID="$DEFAULT_USER_ID"
-          fi
-
-          if [ -z "$PROXY_IPS" ] || [ "$PROXY_IPS" == "$DEFAULT_PROXY_IPS" ]; then
-            echo "Using default proxyIPs"
-            PROXY_IPS="$DEFAULT_PROXY_IPS"
-          fi
-
-          # 保存环境变量
-          echo "WORKER_ID=$WORKER_ID" >> $GITHUB_ENV
-          echo "PROXY_IPS_JSON=$PROXY_IPS" >> $GITHUB_ENV
-
-      # Step 5: Obfuscate op.js and prepend dynamic workerID and proxyIPs
-      - name: Obfuscate op.js and prepend dynamic workerID and proxyIPs
-        run: |
-          set -euo pipefail
-
-          # 检查环境变量
-          if [ -z "${WORKER_ID}" ] || [ -z "${PROXY_IPS_JSON}" ]; then
-            echo "Error: WORKER_ID or PROXY_IPS_JSON is not set!"
-            exit 1
-          fi
-
-          # 临时目录
+          # 创建临时目录
           mkdir -p .github/actions-temp
           TMP_OBF=.github/actions-temp/op.obf.js
           OUT=opp.js
+
+          if [ ! -f op.js ]; then
+            echo "Error: op.js not found in repo root"
+            exit 1
+          fi
 
           # 混淆 op.js 文件
           javascript-obfuscator op.js --output "$TMP_OBF" --compact true \
@@ -87,33 +62,39 @@ jobs:
             --debug-protection false \
             --disable-console-output true
 
-          # 将动态生成的 workerID 和 proxyIPs 写入文件头部
+          # 清除可能的无关注释和头部内容
+          sed -i '/^\/\/ *<!--.*-->.*$/d' "$TMP_OBF"
+          sed -i '/^\s*<!--.*-->.*$/d' "$TMP_OBF"
+          sed -i '/^\s*let\s\+userID\s*=/d' "$TMP_OBF"
+          sed -i '/^\s*const\s\+proxyIPs\s*=/d' "$TMP_OBF"
+
+          # 在生成的 opp.js 中插入动态的 USER_ID 和 PROXY_IPS_JSON
           cat > "$OUT" <<EOF
-          let workerID = "${WORKER_ID}";
+          let userID = "${USER_ID}";
           const proxyIPs = ${PROXY_IPS_JSON};
+
           EOF
 
-          # 将混淆后的代码附加到文件中
+          # 追加混淆后的代码
           cat "$TMP_OBF" >> "$OUT"
 
           # 清理临时文件
           rm -rf .github/actions-temp
 
-          echo "✅ Generated $OUT at repo root"
+          echo "✅ Generated opp.js at repo root"
 
-      # Step 6: Ensure op.js is ignored and commit opp.js
-      - name: Ensure op.js ignored and commit opp.js
+      # 5. 确保 op.js 不被提交并提交 opp.js
+      - name: Commit and push opp.js
         run: |
           set -euo pipefail
 
-          # 确保 op.js 被添加到 .gitignore
+          # 确保 op.js 不会被提交
           touch .gitignore
           if ! grep -Fxq 'op.js' .gitignore; then
             echo 'op.js' >> .gitignore
             echo 'Added op.js to .gitignore'
           fi
 
-          # 配置 Git 提交信息
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add .gitignore opp.js
@@ -125,7 +106,7 @@ jobs:
             git push
           fi
 
-      # Step 7: Preview opp.js (first 10 lines)
+      # 6. 预览生成的 opp.js 头部内容（前 10 行）
       - name: Preview opp.js header (first 10 lines)
         run: |
           echo "----- opp.js (first 10 lines) -----"
