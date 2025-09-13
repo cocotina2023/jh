@@ -10,7 +10,7 @@ jobs:
       contents: write
 
     env:
-      # Default userID (override with repo secret or variable)
+      # Default userID (can override with repo secret or variable)
       USER_ID: a1b2c3d4-e5f6-7890-1234-567890abcdef
       # Default proxyIPs JSON array string. Override with repo var if needed, e.g. '["1.2.3.4"]'
       PROXY_IPS_JSON: '[""]'
@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Create a temporary directory for obfuscation
+          # Create temporary directory for obfuscation
           mkdir -p .github/actions-temp
           TMP_OBF=.github/actions-temp/op.obf.js
           OUT=opp.js
@@ -64,13 +64,13 @@ jobs:
             --debug-protection false \
             --disable-console-output true
 
-          # 2) Remove any injected comments and unwanted lines
+          # 2) Remove any injected comments or unwanted lines
           sed -i '/^\/\/ *<!--.*-->.*$/d' "$TMP_OBF"
           sed -i '/^\s*<!--.*-->.*$/d' "$TMP_OBF"
           sed -i '/^\s*let\s\+userID\s*=/d' "$TMP_OBF"
           sed -i '/^\s*const\s\+proxyIPs\s*=/d' "$TMP_OBF"
 
-          # 3) Write the fixed header (userID and proxyIPs) to the output file
+          # 3) Prepend the fixed header with the userID and proxyIPs
           cat > "$OUT" <<EOF
             let userID = "${USER_ID}";
             const proxyIPs = ${PROXY_IPS_JSON};
