@@ -20,10 +20,10 @@ jobs:
         with:
           node-version: '18'
 
-      # 3. 安装 JavaScript Obfuscator 和 UUID 库
+      # 3. 安装依赖项，包括 uuid 和 javascript-obfuscator
       - name: Install dependencies
         run: |
-          npm install -g javascript-obfuscator uuid
+          npm install uuid javascript-obfuscator
 
       # 4. 生成动态 UUID 和 obfuscate opp.js
       - name: Generate dynamic UUID and obfuscate opp.js
