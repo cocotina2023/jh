@@ -1,4 +1,4 @@
-name: Obfuscate op.js fully
+name: Fully Obfuscate op.js
 
 on:
   workflow_dispatch:
@@ -11,6 +11,8 @@ jobs:
       # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # 2. Setup Node.js
       - name: Set up Node.js
@@ -22,7 +24,7 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator
 
-      # 4. Obfuscate op.js including UUID and proxyIPs
+      # 4. Obfuscate op.js
       - name: Obfuscate op.js
         run: |
           node <<'EOF'
@@ -42,14 +44,7 @@ jobs:
             fs.mkdirSync(outputDir);
           }
 
-          // 直接把 header 放在 op.js 前也混淆
-          const userID = 'd78e37b0-09ff-46d0-890f-ff3791297005';
-          const proxyIPs = [""];
-
-          const header = `let userID = "${userID}";\nconst proxyIPs = ${JSON.stringify(proxyIPs)};\n\n`;
-
           const originalCode = fs.readFileSync(sourceFile, 'utf8');
-          const combinedCode = header + originalCode;
 
           const obfuscationOptions = {
             esModule: true,
@@ -71,18 +66,20 @@ jobs:
             debugProtection: false
           };
 
-          const obfuscatedCode = JavaScriptObfuscator.obfuscate(combinedCode, obfuscationOptions).getObfuscatedCode();
+          const obfuscatedCode = JavaScriptObfuscator.obfuscate(originalCode, obfuscationOptions).getObfuscatedCode();
           fs.writeFileSync(outputFile, obfuscatedCode, 'utf8');
           console.log(`Obfuscated file written to ${outputFile}`);
           EOF
 
-      # 5. Commit & push
+      # 5. Commit & push dist/opp.js
       - name: Commit and push opp.js
         run: |
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
           git add dist/opp.js
-          if git diff --staged --quiet; then
+
+          if git diff --cached --quiet; then
             echo "No changes to commit"
           else
             git commit -m "build: Fully obfuscate op.js to dist/opp.js"
