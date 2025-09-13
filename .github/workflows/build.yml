@@ -1,4 +1,4 @@
-name: Obfuscate op.js (ESM + header preserved)
+name: Obfuscate op.js (with header preserved)
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install javascript-obfuscator@latest
 
-      # 4. Obfuscate op.js (ESM compatible) via Node script
+      # 4. Obfuscate op.js (preserve header and no esModule)
       - name: Obfuscate op.js
         run: |
           node -e "
@@ -44,7 +44,6 @@ jobs:
             const code = fs.readFileSync(inputFile, 'utf8');
 
             const obfuscated = JavaScriptObfuscator.obfuscate(code, {
-              esModule: true,
               compact: true,
               controlFlowFlattening: true,
               controlFlowFlatteningThreshold: 0.75,
@@ -66,7 +65,7 @@ jobs:
             }).getObfuscatedCode();
 
             fs.writeFileSync(outputFile, obfuscated, 'utf8');
-            console.log('✅ Generated opp.js (ESM compatible with header preserved)');
+            console.log('✅ Generated opp.js with header preserved (non-ESM)');
           "
 
       # 5. Commit & push opp.js
@@ -79,7 +78,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "build: obfuscate op.js (ESM + header preserved)"
+            git commit -m "build: obfuscate op.js (non-ESM, header preserved)"
             BRANCH=$(git rev-parse --abbrev-ref HEAD)
             git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:$BRANCH
 
