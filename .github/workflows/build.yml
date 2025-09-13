@@ -71,17 +71,26 @@ jobs:
       # 5. Commit & push opp.js
       - name: Commit and push opp.js
         run: |
+          set -euo pipefail
+
+          # Avoid committing source op.js accidentally
+          touch .gitignore
+          if ! grep -Fxq 'op.js' .gitignore; then
+            echo 'op.js' >> .gitignore
+            echo 'Added op.js to .gitignore'
+          fi
+
           git config --global user.name 'GitHub Actions Bot'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add .gitignore opp.js
 
-          git add opp.js
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "build: obfuscate op.js (non-ESM, header preserved)"
-            BRANCH=$(git rev-parse --abbrev-ref HEAD)
-            git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:$BRANCH
-
+            git commit -m 'build: generate obfuscated opp.js'
+            git push "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          fi
+          
       # 6. Preview opp.js header
       - name: Preview opp.js header
         run: |
