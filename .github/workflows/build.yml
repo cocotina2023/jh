@@ -1,4 +1,4 @@
-name: Obfuscate op.js build
+name: Obfuscate all .js build
 
 on:
   workflow_dispatch:
@@ -10,10 +10,10 @@ jobs:
       contents: write
 
     env:
-      # Default userID (override with repo secret or variable)
+      # 默认值（可在仓库 Settings -> Secrets / Variables 中覆盖）
       USER_ID: a1b2c3d4-e5f6-7890-1234-567890abcdef
-      # Default proxyIPs JSON array string. Override with repo var if needed, e.g. '["1.2.3.4"]'
       PROXY_IPS_JSON: '[""]'
+      OUT_FILE: opp.js
 
     steps:
       - name: Checkout repository
@@ -27,95 +27,98 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install -g javascript-obfuscator
 
-      - name: Obfuscate whole op.js and prepend fixed header
+      - name: Obfuscate all tracked .js files and build ${OUT_FILE}
         run: |
           set -euo pipefail
 
-          # working files
-          mkdir -p .github/actions-temp
-          TMP_OBF=.github/actions-temp/op.obf.js
-          OUT=opp.js
+          TMP_DIR=.github/actions-temp
+          mkdir -p "$TMP_DIR"
+          TMP_OBF="$TMP_DIR/file.obf.js"
+          OUT="$OUT_FILE"
 
-          if [ ! -f op.js ]; then
-            echo "Error: op.js not found in repo root"
-            exit 1
+          # get tracked .js files (omit this workflow and generated file)
+          mapfile -t JS_FILES < <(git ls-files '*.js' | grep -vE '^.github/|^node_modules/|^'"$OUT"'$' || true)
+
+          if [ "${#JS_FILES[@]}" -eq 0 ]; then
+            echo "No tracked .js files found. Exiting."
+            exit 0
           fi
 
-          # 1) obfuscate entire op.js to a temp file
-          javascript-obfuscator op.js --output "$TMP_OBF" --compact true \
-            --control-flow-flattening true \
-            --control-flow-flattening-threshold 0.75 \
-            --dead-code-injection true \
-            --dead-code-injection-threshold 0.4 \
-            --string-array true \
-            --string-array-encoding base64 \
-            --string-array-threshold 0.75 \
-            --rename-globals true \
-            --identifier-names-generator mangled \
-            --numbers-to-expressions true \
-            --split-strings true \
-            --split-strings-chunk-length 10 \
-            --transform-object-keys true \
-            --self-defending false \
-            --debug-protection false \
-            --disable-console-output true
+          # start fresh output file and write header (avoid heredoc to prevent YAML issues)
+          echo "let userID = \"${USER_ID}\";" > "$OUT"
+          echo "const proxyIPs = ${PROXY_IPS_JSON};" >> "$OUT"
+          echo "" >> "$OUT"
 
-          # 2) remove any injected //<-- ... --> style lines at top or HTML comments anywhere
-          #    remove lines that match // <!-- ... --> anywhere
-          sed -i '/^\/\/ *<!--.*-->.*$/d' "$TMP_OBF"
-          #    remove standalone HTML comment lines like <!-- ... -->
-          sed -i '/^\s*<!--.*-->.*$/d' "$TMP_OBF"
+          for src in "${JS_FILES[@]}"; do
+            echo "Processing: $src"
+            # obfuscate to temp file
+            javascript-obfuscator "$src" --output "$TMP_OBF" --compact true \
+              --control-flow-flattening true \
+              --control-flow-flattening-threshold 0.75 \
+              --dead-code-injection true \
+              --dead-code-injection-threshold 0.4 \
+              --string-array true \
+              --string-array-encoding base64 \
+              --string-array-threshold 0.75 \
+              --rename-globals true \
+              --identifier-names-generator mangled \
+              --numbers-to-expressions true \
+              --split-strings true \
+              --split-strings-chunk-length 10 \
+              --transform-object-keys true \
+              --self-defending false \
+              --debug-protection false \
+              --disable-console-output true
 
-          # 2b) remove any accidental header lines that may exist in the obfuscated file:
-          #     lines beginning with let userID = or const proxyIPs =
-          sed -i '/^\s*let\s\+userID\s*=/d' "$TMP_OBF"
-          sed -i '/^\s*const\s\+proxyIPs\s*=/d' "$TMP_OBF"
+            # defensive cleanup: remove injected comment/header lines and BOM, non-printables
+            sed -i '/^\/\/ *<!--.*-->.*$/d' "$TMP_OBF" || true
+            sed -i '/^\s*<!--.*-->.*$/d' "$TMP_OBF" || true
+            sed -i '/^\s*let\s\+userID\s*=/d' "$TMP_OBF" || true
+            sed -i '/^\s*const\s\+proxyIPs\s*=/d' "$TMP_OBF" || true
+            sed -i '1s/^\xEF\xBB\xBF//' "$TMP_OBF" || true
+            tr -cd '\11\12\15\40-\176' < "$TMP_OBF" > "${TMP_OBF}.clean" || true
+            mv "${TMP_OBF}.clean" "$TMP_OBF" || true
 
-          # 2c) remove BOM / non-printable characters (optional defensive clean)
-          #      transliterate to safe printable characters; remove \r
-          sed -i '1s/^\xEF\xBB\xBF//' "$TMP_OBF" || true
-          tr -cd '\11\12\15\40-\176' < "$TMP_OBF" > "${TMP_OBF}.clean" || true
-          mv "${TMP_OBF}.clean" "$TMP_OBF" || true
+            # append a comment indicating original filename for debugging (optional)
+            printf "\n// ----- FILE: %s -----\n" "$src" >> "$OUT"
+            cat "$TMP_OBF" >> "$OUT"
+            printf "\n// ----- END FILE: %s -----\n\n" "$src" >> "$OUT"
 
-          # 3) write fixed header to output (use env variables; override via repo secrets/vars)
-          cat > "$OUT" <<EOF
-let userID = "${USER_ID}";
-const proxyIPs = ${PROXY_IPS_JSON};
+            rm -f "$TMP_OBF"
+          done
 
-EOF
-
-          # 4) append the obfuscated body
-          cat "$TMP_OBF" >> "$OUT"
-
-          # 5) cleanup temp
-          rm -rf .github/actions-temp
+          # cleanup
+          rm -rf "$TMP_DIR"
 
           echo "✅ Generated $OUT at repo root"
 
-      - name: Ensure op.js ignored and commit opp.js
+      - name: Ensure source .js ignored and commit opp.js
         run: |
           set -euo pipefail
 
-          # avoid committing source op.js accidentally
+          # add common source files to .gitignore to avoid accidental commits (adjust as needed)
           touch .gitignore
-          if ! grep -Fxq 'op.js' .gitignore; then
-            echo 'op.js' >> .gitignore
-            echo 'Added op.js to .gitignore'
-          fi
+          for p in op.js src/*.js; do
+            # only add if file exists in repo root or matched by git ls-files previously
+            if [ -e "$p" ] && ! grep -Fxq "$p" .gitignore; then
+              echo "$p" >> .gitignore
+              echo "Added $p to .gitignore"
+            fi
+          done
 
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add .gitignore opp.js
+          git add .gitignore "${OUT_FILE}" || true
 
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m 'build: generate obfuscated opp.js'
+            git commit -m 'build: generate obfuscated opp.js (all tracked .js files)'
             git push
           fi
 
-      - name: Preview opp.js header (first 10 lines)
+      - name: Preview opp.js header (first 20 lines)
         run: |
-          echo "----- opp.js (first 10 lines) -----"
-          head -n 10 opp.js || true
-          echo "-----------------------------------"
+          echo "----- ${OUT_FILE} (first 20 lines) -----"
+          head -n 20 "${OUT_FILE}" || true
+          echo "----------------------------------------"
