@@ -1,5 +1,4 @@
 name: Obfuscate op.js build
-
 on:
   workflow_dispatch:
 
@@ -54,6 +53,22 @@ jobs:
           mv "$TMP_OBF" "$OUT"
           rm -rf .github/actions-temp
           echo "✅ Generated $OUT at repo root"
+
+      - name: Commit opp.js to repo
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+          # 添加 opp.js
+          git add opp.js
+
+          # 如果有变化才提交
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m 'build: generate obfuscated opp.js'
+            git push
+          fi
 
       - name: Preview opp.js (first 20 lines)
         run: |
