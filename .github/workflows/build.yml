@@ -30,12 +30,12 @@ jobs:
       - name: Install JavaScript Obfuscator
         run: npm install -g javascript-obfuscator
 
-      # 4. Obfuscate whole op.js and prepend fixed header
-      - name: Obfuscate whole op.js and prepend fixed header
+      # 4. Obfuscate op.js and prepend fixed header
+      - name: Obfuscate op.js and prepend fixed header
         run: |
           set -euo pipefail
 
-          # working files
+          # Create a temporary directory for obfuscation
           mkdir -p .github/actions-temp
           TMP_OBF=.github/actions-temp/op.obf.js
           OUT=opp.js
@@ -45,7 +45,7 @@ jobs:
             exit 1
           fi
 
-          # 1) obfuscate the code to a temporary file
+          # 1) Obfuscate the code to a temporary file
           javascript-obfuscator op.js --output "$TMP_OBF" --compact true \
             --control-flow-flattening true \
             --control-flow-flattening-threshold 0.75 \
@@ -64,17 +64,17 @@ jobs:
             --debug-protection false \
             --disable-console-output true
 
-          # 2) remove any injected comments and unwanted lines
+          # 2) Remove any injected comments and unwanted lines
           sed -i '/^\/\/ *<!--.*-->.*$/d' "$TMP_OBF"
           sed -i '/^\s*<!--.*-->.*$/d' "$TMP_OBF"
           sed -i '/^\s*let\s\+userID\s*=/d' "$TMP_OBF"
           sed -i '/^\s*const\s\+proxyIPs\s*=/d' "$TMP_OBF"
 
-          # 3) Write the fixed header to output (use env variables)
+          # 3) Write the fixed header (userID and proxyIPs) to the output file
           cat > "$OUT" <<EOF
             let userID = "${USER_ID}";
             const proxyIPs = ${PROXY_IPS_JSON};
-                  EOF
+          EOF
 
           # 4) Append the obfuscated code body
           cat "$TMP_OBF" >> "$OUT"
