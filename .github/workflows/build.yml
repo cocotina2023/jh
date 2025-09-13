@@ -1,5 +1,4 @@
-name: Obfuscate op.js -> opp.js (commit to repo)
-
+name: Obfuscate op.js build
 on:
   workflow_dispatch:
 
